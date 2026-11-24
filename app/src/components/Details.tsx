@@ -1,0 +1,167 @@
+import { useState } from "react";
+import { EDGE_VERB, EVIDENCE_LABEL, METHOD_LABEL, alarmsOf, displayName, envName, fmtValue, kindInfo, metricsOf, strength, vpcOf, type Index } from "../model";
+import { Spark } from "./Spark";
+import type { ArchEdge, Finding } from "../types";
+
+interface Props {
+  ix: Index;
+  id: string;
+  findings: Finding[];
+  blastCount: number | null;
+  onBlast: () => void;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
+export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClose }: Props) {
+  const [raw, setRaw] = useState(false);
+  const n = ix.byId.get(id);
+  if (!n) return null;
+  const k = kindInfo(n);
+  const layerOfNode = k.layer;
+  const vpc = vpcOf(ix, n);
+  const out = ix.out.get(id) ?? [];
+  const inc = ix.inc.get(id) ?? [];
+  const mine = findings.filter((f) => f.node === id);
+  const attrs = Object.entries(n.attrs ?? {}).filter(([key]) => !["placeholder", "metrics", "alarms"].includes(key));
+  const metrics = metricsOf(n);
+  const alarms = alarmsOf(n);
+  const a = (n.attrs ?? {}) as Record<string, unknown>;
+  const runs = Array.isArray(a.images) && a.images.length
+    ? (a.images as string[]).map((i) => i.split("/").pop()).join(", ")
+    : typeof a.runtime === "string" ? a.runtime : null;
+
+  return (
+    <aside className="details" aria-label="Resource details">
+      <header className="details__head">
+        <span className="res__glyph" data-layer={k.layer} aria-hidden>
+          {k.glyph}
+        </span>
+        <div>
+          <h2>{displayName(n)}</h2>
+          <p className="muted">{displayName(n) === n.name ? k.label : `${k.label}, deployed as ${n.name}`}</p>
+        </div>
+        <button className="icon-btn" onClick={onClose} aria-label="Close details">
+          ×
+        </button>
+      </header>
+
+      {mine.length > 0 && (
+        <section>
+          {mine.map((f, i) => (
+            <div key={i} className={`finding finding--${f.severity}`}>
+              <strong>{f.title}</strong>
+              <p>{f.detail}</p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {(metrics.length > 0 || alarms.length > 0) && (
+        <section>
+          <h3>Last 24 hours</h3>
+          {alarms.map((al) => (
+            <div key={al.name} className={`alarm alarm--${al.state.toLowerCase()}`} title={al.reason ?? undefined}>
+              <span className={`dot dot--${al.state === "ALARM" ? "alarm" : al.state === "OK" ? "ok" : "unknown"}`} />
+              <span className="alarm__name">{al.name}</span>
+              <span className="muted">{al.state === "ALARM" ? "firing" : al.state === "OK" ? "OK" : "no data"}</span>
+            </div>
+          ))}
+          <ul className="metrics">
+            {metrics.map((m) => (
+              <li key={m.key} className={m.alert ? "is-bad" : undefined}>
+                <span className="metrics__label">{m.label}</span>
+                <Spark values={m.values} width={96} height={22} tone={m.alert ? "alarm" : "ink"} label={`${m.label}, last 24 hours`} />
+                <span className="metrics__value">
+                  {fmtValue(m.summary, m.unit)}
+                  <small>{m.summary_label}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section>
+        {layerOfNode === "external" ? (
+          <p className="muted">{n.kind.type === "internet" ? "Anyone on the internet." : "A service outside your AWS account, seen in traces or configuration."}</p>
+        ) : (
+        <dl className="facts">
+          <dt>App</dt>
+          <dd>{n.app ? <>{n.app.value} <span className="muted">{METHOD_LABEL[n.app.method]}</span></> : <span className="muted">Not assigned</span>}</dd>
+          <dt>Environment</dt>
+          <dd>{n.env ? <>{envName(n.env.value)} <span className="muted">{METHOD_LABEL[n.env.method]}</span></> : <span className="muted">Unknown</span>}</dd>
+          {runs && (
+            <>
+              <dt>Runs</dt>
+              <dd>{runs}</dd>
+            </>
+          )}
+          <dt>Runs in</dt>
+          <dd>{vpc ? vpc.name : "AWS-managed (no VPC)"}{n.region ? `, ${n.region}` : ""}</dd>
+        </dl>
+        )}
+        <button className="btn btn--ghost" onClick={onBlast}>
+          {blastCount === null ? "Show what breaks if this fails" : blastCount === 0 ? "Nothing depends on this" : `Hide the ${blastCount} resources that depend on this`}
+        </button>
+      </section>
+
+      <Connections title="Depends on" edges={out} pick={(e) => e.to} ix={ix} onSelect={onSelect} />
+      <Connections title="Used by" edges={inc} pick={(e) => e.from} ix={ix} onSelect={onSelect} />
+
+      {Object.keys(n.tags).length > 0 && (
+        <section>
+          <h3>Tags</h3>
+          <dl className="facts facts--tags">
+            {Object.entries(n.tags).map(([key, v]) => (
+              <div key={key} className="facts__pair">
+                <dt>{key}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      <section>
+        <h3>Identifier</h3>
+        <p className="arn">{n.id}</p>
+        {attrs.length > 0 && (
+          <>
+            <button className="btn btn--link" onClick={() => setRaw(!raw)} aria-expanded={raw}>
+              {raw ? "Hide configuration" : "Show configuration"}
+            </button>
+            {raw && <pre className="raw">{JSON.stringify(Object.fromEntries(attrs), null, 2)}</pre>}
+          </>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+function Connections({ title, edges, pick, ix, onSelect }: { title: string; edges: ArchEdge[]; pick: (e: ArchEdge) => string; ix: Index; onSelect: (id: string) => void }) {
+  const shown = edges.filter((e) => e.kind !== "network_reachable");
+  if (!shown.length) return null;
+  return (
+    <section>
+      <h3>{title}</h3>
+      <ul className="conns">
+        {shown.map((e) => {
+          const other = ix.byId.get(pick(e));
+          const s = strength(e);
+          return (
+            <li key={`${e.from}${e.kind}${e.to}`}>
+              <button className="conn" onClick={() => other && onSelect(other.id)}>
+                <span className="conn__verb">{EDGE_VERB[e.kind]}</span>
+                <span className="conn__name">{other ? displayName(other) : pick(e)}</span>
+                <span className={`chip chip--${s}`} title={e.evidence.map((v) => v.source).join(", ")}>
+                  {EVIDENCE_LABEL[s]}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}

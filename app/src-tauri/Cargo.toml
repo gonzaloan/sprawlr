@@ -1,0 +1,21 @@
+[package]
+name = "sprawlr-app"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Desktop map of your AWS architecture"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+sprawlr-core = { path = "../../crates/sprawlr-core" }
+sprawlr-scan = { path = "../../crates/sprawlr-scan", default-features = false }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+
+[features]
+default = ["ec2"]
+ec2 = ["sprawlr-scan/ec2"]

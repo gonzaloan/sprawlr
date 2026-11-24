@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["crates/sprawlr-core", "crates/sprawlr-scan", "crates/sprawlr-cli", "app/src-tauri"]
+
+# aws-sdk-ec2 is huge; keep dependency builds lean.
+[profile.dev.package."*"]
+debug = false

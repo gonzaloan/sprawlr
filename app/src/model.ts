@@ -1,5 +1,5 @@
 // Pure view logic over a snapshot: no React, no layout. Everything here is testable in isolation.
-import type { Alarm, ArchEdge, ArchNode, Capacity, EdgeKind, Env, EvidenceKind, Finding, Flow, Insights, Layer, Method, Metric, Snapshot } from "./types";
+import type { Alarm, ArchEdge, ArchNode, Capacity, EdgeKind, Env, EvidenceKind, Finding, Flow, Insights, Layer, LogErrors, Method, Metric, Snapshot } from "./types";
 
 // ------------------------------------------------------------------ vocabulary
 
@@ -162,6 +162,12 @@ const WORK = new Set(["reads", "writes", "publishes", "invokes", "subscribes", "
 /** Permission-only connections are hidden unless asked for, except where they are the only map. */
 export function shown(ix: Index, e: ArchEdge, permissions: boolean): boolean {
   return permissions || !permissionOnly(e) || ix.iamMapped.has(e.from);
+}
+
+/** Error patterns read from the resource's logs, if the scan read them. */
+export function logErrorsOf(n: ArchNode): LogErrors | undefined {
+  const l = (n.attrs as Record<string, unknown> | undefined)?.log_errors as LogErrors | undefined;
+  return l && Array.isArray(l.patterns) ? l : undefined;
 }
 
 export function buildIndex(snap: Snapshot): Index {

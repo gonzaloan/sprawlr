@@ -77,6 +77,7 @@ pub fn map_function(ctx: &ScanContext, f: &FunctionConfiguration) -> (Node, Vec<
         "security_groups": sgs.iter().map(|s| sg_id(ctx, s).0).collect::<Vec<_>>(),
         "env_keys": env_keys,
         "env_plaintext_secret_keys": plaintext,
+        "log_groups": [f.logging_config().and_then(|l| l.log_group()).map(String::from).unwrap_or_else(|| format!("/aws/lambda/{}", f.function_name().unwrap_or_default()))],
     });
     (n, links)
 }

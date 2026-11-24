@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-24T19:05:30.341420043Z",
+  "taken_at": "2026-11-24T19:36:15.175338131Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -851,6 +851,20 @@
           "111122223333.dkr.ecr.us-east-1.amazonaws.com/checkout-api:2026.11.3"
         ],
         "launch_type": "FARGATE",
+        "log_errors": {
+          "hours": 24,
+          "log_groups": [
+            "/ecs/checkout-api"
+          ],
+          "patterns": [
+            {
+              "count": 7.0,
+              "last_seen": "2026-11-24 11:58:21.000",
+              "message": "pg: connection pool exhausted (max <n> connections), waited <n> ms"
+            }
+          ],
+          "total": 7.0
+        },
         "memory": "2048",
         "metrics": [
           {
@@ -1319,6 +1333,30 @@
         "env_plaintext_secret_keys": [
           "STRIPE_API_KEY"
         ],
+        "log_errors": {
+          "hours": 24,
+          "log_groups": [
+            "/aws/lambda/BillingStack-prod-InvoiceProcessor9F3A21-XK2"
+          ],
+          "patterns": [
+            {
+              "count": 19.0,
+              "last_seen": "2026-11-24 11:52:03.120",
+              "message": "Timeout calling https://api.stripe.com/v1/invoices after <n> ms"
+            },
+            {
+              "count": 5.0,
+              "last_seen": "2026-11-24 11:49:55.310",
+              "message": "ConditionalCheckFailedException: invoice <n> already exists"
+            },
+            {
+              "count": 2.0,
+              "last_seen": "2026-11-24 09:12:00.551",
+              "message": "KeyError: 'customer_id'"
+            }
+          ],
+          "total": 26.0
+        },
         "memory_mb": 512,
         "metrics": [
           {
@@ -2919,7 +2957,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:PutObject",
-          "seen_at": "2026-11-24T19:05:30.340058873Z"
+          "seen_at": "2026-11-24T19:36:15.174253748Z"
         }
       ]
     },
@@ -2932,7 +2970,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:GetObject",
-          "seen_at": "2026-11-24T19:05:30.340074588Z"
+          "seen_at": "2026-11-24T19:36:15.174280485Z"
         }
       ]
     },
@@ -2945,7 +2983,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: sqs:ReceiveMessage",
-          "seen_at": "2026-11-24T19:05:30.340078015Z"
+          "seen_at": "2026-11-24T19:36:15.174284015Z"
         }
       ]
     },
@@ -3510,7 +3548,8 @@
         "errors_24h": 0.0,
         "sync_depth": 2,
         "sync_latency_ms": 107.5,
-        "slowest": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler"
+        "slowest": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+        "top_errors": []
       },
       {
         "id": "flow:arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
@@ -3643,10 +3682,36 @@
         ],
         "stages": 3,
         "runs_24h": 43200.0,
-        "errors_24h": 38.0,
+        "errors_24h": 45.0,
         "sync_depth": 3,
         "sync_latency_ms": null,
-        "slowest": null
+        "slowest": null,
+        "top_errors": [
+          {
+            "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "message": "Timeout calling https://api.stripe.com/v1/invoices after <n> ms",
+            "count": 19.0,
+            "last_seen": "2026-11-24 11:52:03.120"
+          },
+          {
+            "node": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+            "message": "pg: connection pool exhausted (max <n> connections), waited <n> ms",
+            "count": 7.0,
+            "last_seen": "2026-11-24 11:58:21.000"
+          },
+          {
+            "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "message": "ConditionalCheckFailedException: invoice <n> already exists",
+            "count": 5.0,
+            "last_seen": "2026-11-24 11:49:55.310"
+          },
+          {
+            "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "message": "KeyError: 'customer_id'",
+            "count": 2.0,
+            "last_seen": "2026-11-24 09:12:00.551"
+          }
+        ]
       },
       {
         "id": "flow:arn:aws:s3:::reports-uploads",
@@ -3700,7 +3765,8 @@
         "errors_24h": 0.0,
         "sync_depth": 0,
         "sync_latency_ms": null,
-        "slowest": null
+        "slowest": null,
+        "top_errors": []
       },
       {
         "id": "flow:arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
@@ -3772,7 +3838,27 @@
         "errors_24h": 26.0,
         "sync_depth": 2,
         "sync_latency_ms": 8800.0,
-        "slowest": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2"
+        "slowest": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+        "top_errors": [
+          {
+            "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "message": "Timeout calling https://api.stripe.com/v1/invoices after <n> ms",
+            "count": 19.0,
+            "last_seen": "2026-11-24 11:52:03.120"
+          },
+          {
+            "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "message": "ConditionalCheckFailedException: invoice <n> already exists",
+            "count": 5.0,
+            "last_seen": "2026-11-24 11:49:55.310"
+          },
+          {
+            "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "message": "KeyError: 'customer_id'",
+            "count": 2.0,
+            "last_seen": "2026-11-24 09:12:00.551"
+          }
+        ]
       },
       {
         "id": "flow:arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api",
@@ -3800,7 +3886,8 @@
         "errors_24h": 0.0,
         "sync_depth": 1,
         "sync_latency_ms": null,
-        "slowest": null
+        "slowest": null,
+        "top_errors": []
       },
       {
         "id": "flow:arn:aws:lambda:us-east-1:111122223333:function:report-generator",
@@ -3828,7 +3915,8 @@
         "errors_24h": 0.0,
         "sync_depth": 1,
         "sync_latency_ms": null,
-        "slowest": null
+        "slowest": null,
+        "top_errors": []
       }
     ],
     "capacity": [
@@ -3901,8 +3989,8 @@
         "kind": "error_origin",
         "priority": "high",
         "title": "Errors start at InvoiceProcessor",
-        "detail": "26 errors in the last 24 hours, affecting “Web requests to checkout” and “MonthlyClose runs”; it calls InvoicesTable, api.stripe.com.",
-        "action": "Open its logs for the last hours and look at the most common error message.",
+        "detail": "26 errors in the last 24 hours, affecting “Web requests to checkout” and “MonthlyClose runs”; it calls InvoicesTable, api.stripe.com. Most common in its logs: “Timeout calling https://api.stripe.com/v1/invoices after <n> ms” (19 of 26 error lines).",
+        "action": "Start with that message: it is 73% of the error lines.",
         "nodes": [
           "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2"
         ],

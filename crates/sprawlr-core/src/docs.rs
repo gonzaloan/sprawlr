@@ -292,6 +292,13 @@ impl<'a> Ctx<'a> {
                 let _ = writeln!(s, "  {a}{arrow}{b}: {v}{iam}");
             }
             let _ = writeln!(s, "```\n");
+            if !f.top_errors.is_empty() {
+                let _ = writeln!(s, "Most frequent errors in its logs (24 h):\n");
+                for e in &f.top_errors {
+                    let _ = writeln!(s, "- {} × {}: `{}`", fmt_num(e.count), self.name(&e.node), e.message.replace('`', "'"));
+                }
+                s.push('\n');
+            }
         }
         s
     }
@@ -509,9 +516,32 @@ impl<'a> Ctx<'a> {
                 }
             }
         }
+        // --- error messages from logs
+        let mut log_rows = Vec::new();
+        for n in &members {
+            if let Some(l) = crate::logs::of(n) {
+                for p in &l.patterns {
+                    log_rows.push(format!(
+                        "| {} | `{}` | {} | {} |",
+                        cell(&display_name(n)),
+                        cell(&p.message.replace('`', "'")),
+                        fmt_num(p.count),
+                        p.last_seen.as_deref().map(|t| t.get(..16).unwrap_or(t)).unwrap_or("")
+                    ));
+                }
+            }
+        }
+
         if !health_rows.is_empty() {
             let _ = writeln!(s, "\n## Health in the last 24 hours\n\n| Resource | Signal | Value | |\n|---|---|---|---|");
             for r in health_rows {
+                let _ = writeln!(s, "{r}");
+            }
+        }
+
+        if !log_rows.is_empty() {
+            let _ = writeln!(s, "\n## Errors in logs, last 24 hours\n\nMessages are reduced to patterns: numbers, ids, addresses and values are masked, and the raw lines are never stored.\n\n| Resource | Message | Times | Last seen (UTC) |\n|---|---|---|---|");
+            for r in log_rows {
                 let _ = writeln!(s, "{r}");
             }
         }

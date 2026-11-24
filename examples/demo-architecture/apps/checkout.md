@@ -100,6 +100,14 @@ Thick arrows were seen in traffic, plain arrows are configured, dotted arrows ar
 | checkout-orders-db | CPU | 53 % (latest) |  |
 | checkout-orders-db | Connections | 120 (latest) |  |
 
+## Errors in logs, last 24 hours
+
+Messages are reduced to patterns: numbers, ids, addresses and values are masked, and the raw lines are never stored.
+
+| Resource | Message | Times | Last seen (UTC) |
+|---|---|---|---|
+| checkout-api | `pg: connection pool exhausted (max <n> connections), waited <n> ms` | 7 | 2026-11-24 11:58 |
+
 ## How components communicate
 
 | From | | To | How we know |

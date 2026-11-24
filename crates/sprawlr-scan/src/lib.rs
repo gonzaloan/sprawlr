@@ -10,6 +10,7 @@ pub mod extract;
 pub mod iam;
 pub mod lambda;
 pub mod link;
+pub mod logs;
 #[cfg(feature = "ec2")]
 pub mod network;
 pub mod refs;
@@ -33,11 +34,13 @@ pub fn quiet() -> Progress {
 pub struct ScanOptions {
     /// CloudWatch alarms + metrics and X-Ray traces. GetMetricData is billed (cents per scan).
     pub telemetry: bool,
+    /// Error lines from CloudWatch Logs (Logs Insights reads log content and bills per GB scanned).
+    pub logs: bool,
 }
 
 impl Default for ScanOptions {
     fn default() -> Self {
-        ScanOptions { telemetry: true }
+        ScanOptions { telemetry: true, logs: false }
     }
 }
 
@@ -214,17 +217,28 @@ pub async fn scan(profile: Option<&str>, regions: &[String], opts: &ScanOptions,
             report.warnings.extend(w);
         }
     }
+    if opts.logs {
+        for region in regions {
+            let ctx = context(&base, &account, region);
+            let w = logs::apply(&mut report.graph, &ctx, &progress).await;
+            report.warnings.extend(w);
+        }
+    }
     Ok(report)
 }
 
-/// Re-read alarms, metrics and traces for an existing graph (no structural rescan).
-pub async fn refresh_telemetry(graph: &mut ArchGraph, profile: Option<&str>, progress: Progress) -> anyhow::Result<Vec<String>> {
+/// Re-read alarms, metrics and traces (and error logs, if asked) for an existing graph
+/// (no structural rescan).
+pub async fn refresh_telemetry(graph: &mut ArchGraph, profile: Option<&str>, logs: bool, progress: Progress) -> anyhow::Result<Vec<String>> {
     let (base, account) = session(profile).await?;
     let regions: std::collections::BTreeSet<String> = graph.nodes().filter_map(|n| n.region.clone()).collect();
     let mut warnings = Vec::new();
     for region in regions {
         let ctx = context(&base, &account, &region);
         warnings.extend(telemetry::apply(graph, &ctx, &progress).await);
+        if logs {
+            warnings.extend(logs::apply(graph, &ctx, &progress).await);
+        }
     }
     Ok(warnings)
 }

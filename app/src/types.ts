@@ -71,6 +71,8 @@ export interface Hop {
   kind: EdgeKind;
   mode: "sync" | "async";
   stage: number;
+  /** Known only from IAM permissions. */
+  inferred?: boolean;
 }
 
 export interface Flow {
@@ -78,7 +80,7 @@ export interface Flow {
   name: string;
   app: string | null;
   env: string | null;
-  trigger: "internet" | "self_started";
+  trigger: "internet" | "event" | "self_started";
   entry: string;
   nodes: string[];
   hops: Hop[];

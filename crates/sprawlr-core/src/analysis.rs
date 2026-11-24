@@ -199,11 +199,21 @@ pub fn findings(g: &ArchGraph) -> Vec<Finding> {
         }
     }
 
+    // Resources with at least one connection confirmed by configuration or traffic: only for
+    // those can a permission-only connection be called "not used". For an EC2 instance known
+    // only through IAM, the permissions are the best map we have.
+    let confirmed: std::collections::BTreeSet<&NodeId> = g
+        .edges()
+        .filter(|(_, _, e)| e.kind.is_runtime_dependency() && !e.is_permission_only())
+        .map(|(f, _, _)| &f.id)
+        .collect();
+    let mut extra: std::collections::BTreeMap<&NodeId, Vec<String>> = std::collections::BTreeMap::new();
+
     for (from, to, e) in g.edges() {
         if from.kind == NodeKind::Internet && !matches!(to.layer(), Layer::Network | Layer::Scope) {
             push(to, "internet_entry", Severity::Low, "Reachable from the internet", format!("Public entry point ({}).", verb(e.kind)));
         }
-        if e.kind == EdgeKind::NetworkReachable || !e.is_permission_only() {
+        if e.kind == EdgeKind::NetworkReachable || e.kind == EdgeKind::AssumesRole || !e.is_permission_only() {
             continue;
         }
         let (fe, te) = (env_of(from), env_of(to));
@@ -212,9 +222,50 @@ pub fn findings(g: &ArchGraph) -> Vec<Finding> {
         if cross {
             push(from, "cross_env_access", Severity::High, "Can access another environment",
                 format!("IAM allows it to {} {target} ({} → {}), but nothing in its configuration does.", verb_base(e.kind), fe.unwrap(), te.unwrap()));
-        } else {
-            push(from, "unused_permission", Severity::Medium, "Permission never used",
-                format!("IAM allows it to {} {target}, but nothing in its configuration does.", verb_base(e.kind)));
+        } else if confirmed.contains(&from.id) {
+            extra.entry(&from.id).or_default().push(format!("{} {target}", verb_base(e.kind)));
+        }
+    }
+    for (id, list) in extra {
+        let Some(n) = g.node(id) else { continue };
+        let shown: Vec<&String> = list.iter().take(4).collect();
+        let more = if list.len() > 4 { format!(" and {} more", list.len() - 4) } else { String::new() };
+        push(n, "unused_permission", Severity::Low, if list.len() == 1 { "Permission not seen in use" } else { "Permissions not seen in use" },
+            format!("IAM allows it to {}{more}, but nothing in its configuration or traffic does. Remove what it does not need.",
+                shown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
+    }
+
+    // Grants that cover a whole service: one finding per service and policy.
+    for n in g.nodes() {
+        let mut grouped: std::collections::BTreeMap<(String, String, String), Vec<String>> = std::collections::BTreeMap::new();
+        for b in attr(n, "broad_permissions").and_then(|v| v.as_array()).into_iter().flatten() {
+            let field = |k: &str| b.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let access = grouped.entry((field("service"), field("policy"), field("pattern"))).or_default();
+            let a = field("access");
+            if !access.contains(&a) {
+                access.push(a);
+            }
+        }
+        for ((service, policy, pattern), access) in grouped {
+            let what = match service.as_str() {
+                "s3" => "every S3 bucket",
+                "dynamodb" => "every DynamoDB table",
+                "sqs" => "every SQS queue",
+                "sns" => "every SNS topic",
+                "lambda" => "every Lambda function",
+                "secretsmanager" => "every secret",
+                "ssm" => "every SSM parameter",
+                "kms" => "every KMS key",
+                "events" => "every event bus",
+                other => other,
+            };
+            let verbs = match access.as_slice() {
+                [one] => one.clone(),
+                [init @ .., last] => format!("{} and {last}", init.join(", ")),
+                [] => "access".into(),
+            };
+            push(n, "broad_permission", Severity::Medium, "Permission covers a whole service",
+                format!("Its role can {verbs} {what} (policy {policy}, resource `{pattern}`). Limit it to the resources it uses."));
         }
     }
     out.sort_by(|a, b| a.severity.cmp(&b.severity).then(a.node.cmp(&b.node)));

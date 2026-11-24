@@ -97,7 +97,7 @@ export function displayName(n: ArchNode): string {
 export const EVIDENCE_LABEL: Record<EvidenceKind, string> = {
   observed: "Seen in traffic",
   declared: "Configured",
-  permitted: "Allowed only",
+  permitted: "Allowed by IAM",
 };
 
 export const METHOD_LABEL: Record<Method, string> = {
@@ -150,6 +150,18 @@ export interface Index {
   byId: Map<string, ArchNode>;
   out: Map<string, ArchEdge[]>;
   inc: Map<string, ArchEdge[]>;
+  /** Resources whose connections are known only from IAM (an EC2 worker: its code is out of sight). */
+  iamMapped: Set<string>;
+}
+
+/** Connection that only an IAM policy allows: nothing in configuration or traffic shows it. */
+export const permissionOnly = (e: ArchEdge) => strength(e) === "permitted";
+
+const WORK = new Set(["reads", "writes", "publishes", "invokes", "subscribes", "routes_to"]);
+
+/** Permission-only connections are hidden unless asked for, except where they are the only map. */
+export function shown(ix: Index, e: ArchEdge, permissions: boolean): boolean {
+  return permissions || !permissionOnly(e) || ix.iamMapped.has(e.from);
 }
 
 export function buildIndex(snap: Snapshot): Index {
@@ -160,7 +172,12 @@ export function buildIndex(snap: Snapshot): Index {
     (out.get(e.from) ?? out.set(e.from, []).get(e.from)!).push(e);
     (inc.get(e.to) ?? inc.set(e.to, []).get(e.to)!).push(e);
   }
-  return { snap, byId, out, inc };
+  const iamMapped = new Set<string>();
+  for (const [id, list] of out) {
+    const work = list.filter((e) => WORK.has(e.kind));
+    if (work.length && work.every(permissionOnly)) iamMapped.add(id);
+  }
+  return { snap, byId, out, inc, iamMapped };
 }
 
 /** Nearest VPC containing the node (the "territory" it lives in), if any. */
@@ -218,6 +235,8 @@ export function orphans(ix: Index, env: string | null) {
   const unassigned: ArchNode[] = [];
   for (const n of ix.snap.nodes) {
     if (n.app || !mappable(n) || layerOf(n) === "external" || !inEnv(n, env)) continue;
+    // Roles are reached through what assumes them; an account has hundreds.
+    if (layerOf(n) === "identity") continue;
     const touching = new Set<string>();
     for (const e of [...(ix.out.get(n.id) ?? []), ...(ix.inc.get(n.id) ?? [])]) {
       const other = ix.byId.get(e.from === n.id ? e.to : e.from);
@@ -247,6 +266,8 @@ export interface ViewEdge {
   strength: EvidenceKind;
   count?: number;
   mode?: "sync" | "async";
+  /** Known only from IAM. */
+  iam?: boolean;
 }
 
 export interface View {
@@ -258,18 +279,18 @@ export interface View {
 }
 
 /** One app: its resources, plus the first ring of things it talks to. */
-export function appView(ix: Index, app: string, env: string | null): View {
+export function appView(ix: Index, app: string, env: string | null, permissions = false): View {
   const members = ix.snap.nodes.filter((n) => n.app?.value === app && inEnv(n, env) && mappable(n));
-  return resourceView(ix, members);
+  return resourceView(ix, members, permissions);
 }
 
 /** A single resource with its neighbours (used for shared / unassigned resources). */
-export function resourceFocus(ix: Index, id: string): View {
+export function resourceFocus(ix: Index, id: string, permissions = false): View {
   const n = ix.byId.get(id);
-  return n ? resourceView(ix, [n]) : { nodes: [], edges: [], groups: [] };
+  return n ? resourceView(ix, [n], permissions) : { nodes: [], edges: [], groups: [] };
 }
 
-function resourceView(ix: Index, members: ArchNode[]): View {
+function resourceView(ix: Index, members: ArchNode[], permissions: boolean): View {
   const ids = new Set(members.map((n) => n.id));
   const nodes = new Map<string, ViewNode>();
   members.forEach((n) => nodes.set(n.id, { id: n.id, node: n, role: "member" }));
@@ -278,6 +299,7 @@ function resourceView(ix: Index, members: ArchNode[]): View {
   for (const e of ix.snap.edges) {
     if (e.kind === "network_reachable") continue;
     if (!ids.has(e.from) && !ids.has(e.to)) continue;
+    if (!shown(ix, e, permissions)) continue;
     for (const end of [e.from, e.to]) {
       if (nodes.has(end)) continue;
       const n = ix.byId.get(end);
@@ -285,7 +307,7 @@ function resourceView(ix: Index, members: ArchNode[]): View {
       nodes.set(end, { id: end, node: n, role: layerOf(n) === "external" ? "external" : "neighbor" });
     }
     if (nodes.has(e.from) && nodes.has(e.to))
-      edges.push({ id: `${e.from}|${e.kind}|${e.to}`, from: e.from, to: e.to, label: EDGE_VERB[e.kind], strength: strength(e) });
+      edges.push({ id: `${e.from}|${e.kind}|${e.to}`, from: e.from, to: e.to, label: EDGE_VERB[e.kind], strength: strength(e), iam: permissionOnly(e) });
   }
 
   const groups = new Map<string, ArchNode>();
@@ -300,7 +322,7 @@ function resourceView(ix: Index, members: ArchNode[]): View {
 }
 
 /** System context: apps as single blocks, shared resources between them, internet entry points. */
-export function overview(ix: Index, env: string | null, summaries: AppSummary[], shared: ArchNode[]): View {
+export function overview(ix: Index, env: string | null, summaries: AppSummary[], shared: ArchNode[], permissions = false): View {
   const nodes = new Map<string, ViewNode>();
   summaries.forEach((a) => nodes.set(`app:${a.name}`, { id: `app:${a.name}`, app: a, role: "member" }));
   shared.forEach((n) => nodes.set(n.id, { id: n.id, node: n, role: "neighbor" }));
@@ -316,6 +338,7 @@ export function overview(ix: Index, env: string | null, summaries: AppSummary[],
   const agg = new Map<string, ViewEdge>();
   for (const e of ix.snap.edges) {
     if (!isRuntime(e) && e.kind !== "routes_to") continue;
+    if (!shown(ix, e, permissions)) continue;
     const a = key(ix.byId.get(e.from));
     const b = key(ix.byId.get(e.to));
     if (!a || !b || a === b) continue;
@@ -370,6 +393,10 @@ export const insightsOf = (snap: Snapshot): Insights => ({ ...EMPTY_INSIGHTS, ..
  * territories here: a flow crosses networks (API in a VPC → event bus → Lambda back in the
  * VPC), and grouping would force the layout to bend edges backwards.
  */
+/** A queue, topic or stream handing work to its consumer reads as delivery, not as the queue reading. */
+export const hopVerb = (h: { kind: ArchEdge["kind"]; mode: "sync" | "async" }) =>
+  h.mode === "async" && (h.kind === "reads" || h.kind === "subscribes") ? "delivers to" : EDGE_VERB[h.kind];
+
 export function flowView(ix: Index, f: Flow): View {
   const nodes: ViewNode[] = f.nodes
     .map((id, i): ViewNode | null => {
@@ -380,7 +407,8 @@ export function flowView(ix: Index, f: Flow): View {
     .filter((v): v is ViewNode => v !== null);
   const edges: ViewEdge[] = f.hops.map((h) => {
     const e = (ix.out.get(h.from) ?? []).find((x) => x.to === h.to && x.kind === h.kind) ?? (ix.out.get(h.to) ?? []).find((x) => x.to === h.from);
-    return { id: `${h.from}|${h.kind}|${h.to}`, from: h.from, to: h.to, label: EDGE_VERB[h.kind], strength: e ? strength(e) : "declared", mode: h.mode };
+    const iam = h.inferred === true;
+    return { id: `${h.from}|${h.kind}|${h.to}`, from: h.from, to: h.to, label: iam ? `${hopVerb(h)} (IAM)` : hopVerb(h), strength: e ? strength(e) : "declared", mode: h.mode, iam };
   });
   if (f.trigger === "internet") {
     const internet = ix.snap.nodes.find((n) => n.kind.type === "internet");

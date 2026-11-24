@@ -21,6 +21,8 @@ aws-sdk-sns = "1"
 aws-sdk-secretsmanager = "1"
 aws-sdk-apigateway = "1"
 aws-sdk-apigatewayv2 = "1"
+aws-sdk-iam = "1"
+percent-encoding = "2"
 aws-sdk-cloudwatch = "1"
 aws-sdk-xray = "1"
 

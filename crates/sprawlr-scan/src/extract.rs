@@ -152,6 +152,7 @@ pub fn extract(ctx: &ScanContext, type_name: &str, ident: &str, p: &Value, lk: &
         "AWS::Events::Rule" => event_rule(ctx, p),
         "AWS::CloudFront::Distribution" => distribution(ctx, p),
         "AWS::EC2::NatGateway" => nat_gateway(ctx, ident, p),
+        "AWS::EC2::Instance" => ec2_instance(ctx, ident, p),
         "AWS::EC2::EIP" => elastic_ip(ctx, ident, p, lk),
         // Folded into other resources or only used through Lookup.
         "AWS::ECS::Cluster" | "AWS::ECS::TaskDefinition" => Extracted::default(),
@@ -271,6 +272,39 @@ fn target_group(p: &Value) -> Extracted {
     Extracted { node: None, links }
 }
 
+// ------------------------------------------------------------------ instances
+
+/// An EC2 instance. What it talks to is in its code, which we cannot read: its instance
+/// profile's role is the map (see `sprawlr_core::iam`). User data is never read.
+fn ec2_instance(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
+    let id = s(p, "InstanceId").unwrap_or(ident);
+    let arn = ctx.arn("ec2", &format!("instance/{id}")).0;
+    let name = arr(p, "Tags").find(|t| s(t, "Key") == Some("Name")).and_then(|t| s(t, "Value")).unwrap_or(id);
+    let mut n = node(ctx, &arn, NodeKind::Ec2Instance, name);
+    n.aliases.push(id.to_string());
+    let mut groups = strs(p, "SecurityGroupIds");
+    groups.extend(arr(p, "NetworkInterfaces").flat_map(|i| strs(i, "GroupSet")));
+    groups.sort();
+    groups.dedup();
+    n.attrs = json!({
+        "instance_id": id,
+        "instance_type": s(p, "InstanceType"),
+        "state": p.pointer("/State/Name").and_then(|v| v.as_str()),
+        "public_ip": s(p, "PublicIp").or(s(p, "PublicIpAddress")).is_some(),
+        "subnets": s(p, "SubnetId").into_iter().collect::<Vec<_>>(),
+        "security_groups": sgs(ctx, groups),
+    });
+    let links = s(p, "IamInstanceProfile")
+        .map(|profile| {
+            // A name, or an ARN: both are aliases of the role that owns the profile.
+            let key = profile.rsplit('/').next().unwrap_or(profile);
+            declared(&arn, Ref::Alias(key.into()), Some(EdgeKind::AssumesRole), "ec2:instance_profile")
+        })
+        .into_iter()
+        .collect();
+    Extracted { node: Some(n), links }
+}
+
 // ------------------------------------------------------------------ network leftovers
 
 fn nat_gateway(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
@@ -383,12 +417,29 @@ fn bucket(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
     }
     let pab = p.get("PublicAccessBlockConfiguration");
     let blocked = pab.is_some_and(|c| ["BlockPublicAcls", "BlockPublicPolicy", "IgnorePublicAcls", "RestrictPublicBuckets"].iter().all(|k| b(c, k) == Some(true)));
+    // Event notifications: an upload starts work elsewhere.
+    let notif = p.get("NotificationConfiguration").cloned().unwrap_or_default();
+    let mut links = Vec::new();
+    let events = |c: &Value| -> Option<String> { s(c, "Event").map(String::from) };
+    for c in arr(&notif, "LambdaConfigurations") {
+        if let Some(f) = s(c, "Function") {
+            links.push(link(&arn, Ref::Id(NodeId(lambda_arn(f))), Some(EdgeKind::Invokes), EvidenceKind::Declared, "s3:notification", events(c)));
+        }
+    }
+    for (list, key) in [("QueueConfigurations", "Queue"), ("TopicConfigurations", "Topic")] {
+        for c in arr(&notif, list) {
+            if let Some(t) = s(c, key) {
+                links.push(link(&arn, Ref::Id(NodeId(t.into())), Some(EdgeKind::Publishes), EvidenceKind::Declared, "s3:notification", events(c)));
+            }
+        }
+    }
     n.attrs = json!({
         "public_access_block": blocked,
         "versioning": p.pointer("/VersioningConfiguration/Status").and_then(|v| v.as_str()) == Some("Enabled"),
         "website": s(p, "WebsiteURL").is_some(),
+        "eventbridge_notifications": notif.pointer("/EventBridgeConfiguration/EventBridgeEnabled").and_then(|v| v.as_bool()).unwrap_or(false),
     });
-    Extracted { node: Some(n), links: vec![] }
+    Extracted { node: Some(n), links }
 }
 
 fn kms_key(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
@@ -772,6 +823,27 @@ mod tests {
 
     #[test]
     fn s3_bucket_public_access() {
+        let up = extract(&ctx(), "AWS::S3::Bucket", "uploads", &json!({
+            "BucketName": "uploads",
+            "NotificationConfiguration": {
+                "QueueConfigurations": [{"Event": "s3:ObjectCreated:*", "Queue": "arn:aws:sqs:us-east-1:123:jobs"}],
+                "LambdaConfigurations": [{"Event": "s3:ObjectRemoved:*", "Function": "arn:aws:lambda:us-east-1:123:function:Cleanup:live"}]
+            }
+        }), &Lookup::default());
+        let l: Vec<String> = up.links.iter().map(|l| format!("{:?} {:?}", l.kind, l.to)).collect();
+        assert!(l.iter().any(|x| x.contains("Publishes") && x.contains("jobs")), "{l:?}");
+        assert!(l.iter().any(|x| x.contains("Invokes") && x.contains("function:Cleanup\")")), "alias suffix dropped: {l:?}");
+
+        let i = extract(&ctx(), "AWS::EC2::Instance", "i-0abc", &json!({
+            "InstanceId": "i-0abc", "InstanceType": "t3.large", "SubnetId": "subnet-a",
+            "SecurityGroupIds": ["sg-1"], "IamInstanceProfile": "reports-worker-profile",
+            "Tags": [{"Key": "Name", "Value": "reports-worker"}], "State": {"Name": "running"}
+        }), &Lookup::default());
+        let inst = i.node.unwrap();
+        assert_eq!(inst.name, "reports-worker");
+        assert_eq!(inst.attrs["instance_type"], "t3.large");
+        assert!(format!("{:?}", i.links[0].to).contains("reports-worker-profile"));
+
         let e = extract(&ctx(), "AWS::S3::Bucket", "assets", &json!({
             "BucketName": "assets", "RegionalDomainName": "assets.s3.us-east-1.amazonaws.com",
             "PublicAccessBlockConfiguration": {"BlockPublicAcls": true, "BlockPublicPolicy": true, "IgnorePublicAcls": true, "RestrictPublicBuckets": false}

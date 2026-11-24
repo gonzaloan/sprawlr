@@ -48,6 +48,7 @@ export default function App() {
   const [docMsg, setDocMsg] = useState<string | null>(null);
   const [lens, setLens] = useState<LensKind>("health");
   const [factor, setFactor] = useState(1);
+  const [permissions, setPermissions] = useState(false);
 
   // Desktop: reopen the last scan instead of the demo.
   useEffect(() => {
@@ -101,11 +102,11 @@ export default function App() {
   const leftover = useMemo(() => ({ count: ins.lifecycle.length, monthly: ins.lifecycle.reduce((s, l) => s + (l.monthly_cost ?? 0), 0) }), [ins]);
 
   const view = useMemo(() => {
-    if (place.kind === "app") return appView(ix, place.name, env);
-    if (place.kind === "resource") return resourceFocus(ix, place.id);
+    if (place.kind === "app") return appView(ix, place.name, env, permissions);
+    if (place.kind === "resource") return resourceFocus(ix, place.id, permissions);
     if (place.kind === "flow" && flow) return flowView(ix, flow);
-    return overview(ix, env, summaries, shared);
-  }, [ix, place, env, summaries, shared, flow]);
+    return overview(ix, env, summaries, shared, permissions);
+  }, [ix, place, env, summaries, shared, flow, permissions]);
 
   // Load lens: utilisation at the chosen traffic level. Apps show their busiest resource.
   const loadOf = useMemo(() => {
@@ -258,7 +259,7 @@ export default function App() {
           {tab === "map" && (
             <div className="stage__sub">
               <p className="muted">{hint}</p>
-              {showMap && <LensBar lens={lens} onLens={setLens} factor={factor} onFactor={setFactor} />}
+              {showMap && <LensBar lens={lens} onLens={setLens} factor={factor} onFactor={setFactor} permissions={permissions} onPermissions={setPermissions} />}
             </div>
           )}
           {tab === "docs" && docMsg && <p className="muted">{docMsg}</p>}

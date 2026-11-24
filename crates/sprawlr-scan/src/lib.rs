@@ -7,6 +7,7 @@
 pub mod apigw;
 pub mod cloudcontrol;
 pub mod extract;
+pub mod iam;
 pub mod lambda;
 pub mod link;
 #[cfg(feature = "ec2")]
@@ -196,8 +197,16 @@ pub async fn scan(profile: Option<&str>, regions: &[String], opts: &ScanOptions,
         Err(e) => outputs.push(ScanOutput { warnings: vec![format!("cloudfront: {e:#}")], ..Default::default() }),
     }
 
+    // IAM is global: roles and what their policies allow.
+    progress("reading IAM roles and policies".into());
+    match iam::scan(&cf).await {
+        Ok(o) => outputs.push(o),
+        Err(e) => outputs.push(ScanOutput { warnings: vec![format!("iam: {}", describe(&e))], ..Default::default() }),
+    }
+
     progress("linking resources".into());
     let mut report = link::link(outputs);
+    sprawlr_core::iam::apply(&mut report.graph);
     if opts.telemetry {
         for region in regions {
             let ctx = context(&base, &account, region);

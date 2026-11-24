@@ -102,4 +102,4 @@ Secret values are never read; only names, usage and rotation settings.
 | High | InvoiceProcessor | **Secret stored as plain text**. STRIPE_API_KEY is set directly in environment variables. Move it to Secrets Manager. |
 | High | InvoiceProcessor | **Alarm firing**. A CloudWatch alarm on this resource is in ALARM state. |
 | Medium | InvoiceProcessor | **Errors in the last 24 hours**. 26 errors in the last 24 hours. |
-| Medium | InvoiceProcessor | **Permission never used**. IAM allows it to publish to platform-events, but nothing in its configuration does. |
+| Low | InvoiceProcessor | **Permission not seen in use**. IAM allows it to publish to platform-events, but nothing in its configuration or traffic does. Remove what it does not need. |

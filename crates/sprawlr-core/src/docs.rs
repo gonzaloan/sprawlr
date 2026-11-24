@@ -262,7 +262,11 @@ impl<'a> Ctx<'a> {
                 s,
                 "### {}\n\n{}, {runs}, {} errors in 24 h{}.\n",
                 f.name,
-                if f.trigger == Trigger::Internet { "Starts from the internet" } else { "Starts on its own" },
+                match f.trigger {
+                    Trigger::Internet => "Starts from the internet",
+                    Trigger::Event => "Starts when data arrives",
+                    Trigger::SelfStarted => "Starts on its own",
+                },
                 fmt_num(f.errors_24h),
                 weakest.map(|c| format!(", breaks first at {} ({})", crate::insights::fmt_x(c.headroom), self.name(&c.node))).unwrap_or_default()
             );
@@ -283,7 +287,9 @@ impl<'a> Ctx<'a> {
             for h in &f.hops {
                 let (Some(a), Some(b)) = (pid(&ids, &h.from), pid(&ids, &h.to)) else { continue };
                 let arrow = if h.mode == Mode::Async { "-)" } else { "->>" };
-                let _ = writeln!(s, "  {a}{arrow}{b}: {}", verb(h.kind));
+                let iam = if h.inferred { " (IAM allows)" } else { "" };
+                let v = if h.mode == Mode::Async && matches!(h.kind, EdgeKind::Reads | EdgeKind::Subscribes) { "delivers to" } else { verb(h.kind) };
+                let _ = writeln!(s, "  {a}{arrow}{b}: {v}{iam}");
             }
             let _ = writeln!(s, "```\n");
         }
@@ -489,6 +495,7 @@ impl<'a> Ctx<'a> {
                 let shown = match (value, unit) {
                     (None, _) => "no data".to_string(),
                     (Some(v), "count") => format!("{} ({when})", fmt_num(v)),
+                    (Some(v), "bytes") => format!("{} ({when})", fmt_bytes(v)),
                     (Some(v), "ms") if v >= 1000.0 => format!("{:.1} s ({when})", v / 1000.0),
                     (Some(v), u) => format!("{} {u} ({when})", fmt_num(v)),
                 };
@@ -764,6 +771,17 @@ impl<'a> Ctx<'a> {
         }
         s
     }
+}
+
+fn fmt_bytes(v: f64) -> String {
+    let units = ["B", "KB", "MB", "GB", "TB"];
+    let mut x = v;
+    let mut i = 0;
+    while x >= 1000.0 && i < units.len() - 1 {
+        x /= 1000.0;
+        i += 1;
+    }
+    if x >= 10.0 || i == 0 { format!("{x:.0} {}", units[i]) } else { format!("{x:.1} {}", units[i]) }
 }
 
 fn fmt_num(v: f64) -> String {

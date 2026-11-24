@@ -8,10 +8,12 @@ interface Props {
   onLens: (l: LensKind) => void;
   factor: number;
   onFactor: (f: number) => void;
+  permissions: boolean;
+  onPermissions: (p: boolean) => void;
 }
 
-/** Health or load, and the what-if traffic multiplier for load. */
-export function LensBar({ lens, onLens, factor, onFactor }: Props) {
+/** Health or load, the what-if traffic multiplier for load, and IAM-only connections. */
+export function LensBar({ lens, onLens, factor, onFactor, permissions, onPermissions }: Props) {
   return (
     <div className="lens">
       <div className="tabs" role="radiogroup" aria-label="What the map shows">
@@ -28,6 +30,10 @@ export function LensBar({ lens, onLens, factor, onFactor }: Props) {
           <output>{factor.toFixed(1)}×</output>
         </label>
       )}
+      <label className="toggle" title="Connections that only an IAM policy allows. Resources mapped from IAM alone always show theirs.">
+        <input type="checkbox" checked={permissions} onChange={(e) => onPermissions(e.target.checked)} />
+        <span>IAM permissions</span>
+      </label>
     </div>
   );
 }

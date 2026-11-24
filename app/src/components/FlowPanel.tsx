@@ -1,4 +1,4 @@
-import { EDGE_VERB, displayName, fmtCount, fmtValue, fmtX, kindInfo, metricsOf, primaryMetric, type Index } from "../model";
+import { displayName, hopVerb, fmtCount, fmtValue, fmtX, kindInfo, metricsOf, primaryMetric, type Index } from "../model";
 import type { Capacity, Flow, Insight } from "../types";
 import { Spark } from "./Spark";
 
@@ -30,7 +30,11 @@ export function FlowPanel({ ix, flow, insights, capacity, onNode }: Props) {
       <header>
         <h2>{flow.name}</h2>
         <p className="muted">
-          {flow.trigger === "internet" ? "Starts with a request from the internet" : "Starts on its own: a schedule, a manual run or a caller outside the scan"}
+          {flow.trigger === "internet"
+            ? "Starts with a request from the internet"
+            : flow.trigger === "event"
+              ? "Starts when data arrives: an upload or a change notifies the next step"
+              : "Starts on its own: a schedule, a manual run or a caller outside the scan"}
           {flow.env ? `, in ${flow.env}` : ""}.
         </p>
       </header>
@@ -46,7 +50,7 @@ export function FlowPanel({ ix, flow, insights, capacity, onNode }: Props) {
         </div>
         <div>
           <dt>Caller waits</dt>
-          <dd>{flow.sync_latency_ms !== null ? fmtValue(flow.sync_latency_ms, "ms") : "no data"}</dd>
+          <dd>{flow.sync_latency_ms !== null ? fmtValue(flow.sync_latency_ms, "ms") : flow.trigger === "internet" ? "no data" : "nobody"}</dd>
         </div>
         <div>
           <dt>Breaks at</dt>
@@ -62,18 +66,24 @@ export function FlowPanel({ ix, flow, insights, capacity, onNode }: Props) {
       {stages.map((hops, s) =>
         hops.length === 0 ? null : (
           <section key={s}>
-            <h3>{s === 0 ? "Answers the caller" : s === 1 ? "Then, in the background" : "Later still"}</h3>
+            <h3>
+              {flow.trigger === "event"
+                ? s <= 1 ? "When data arrives" : s === 2 ? "Then" : "Later still"
+                : s === 0 ? "Answers the caller" : s === 1 ? "Then, in the background" : "Later still"}
+            </h3>
             <ol className="steps">
               {hops.map((h) => {
                 const to = ix.byId.get(h.to);
                 const m = to && primaryMetric(to);
                 const bad = to && metricsOf(to).some((x) => x.alert);
                 return (
-                  <li key={`${h.from}${h.to}${h.kind}`} value={step(h.to)}>
+                  // A hop back to an earlier step (the worker reading the upload) keeps the worker's number.
+                  <li key={`${h.from}${h.to}${h.kind}`} value={step(h.to) < step(h.from) ? step(h.from) : step(h.to)}>
                     <button className="step" onClick={() => onNode(h.to)}>
                       <span className="step__text">
                         <span className="muted">
-                          {name(h.from)} {EDGE_VERB[h.kind]}
+                          {name(h.from)} {hopVerb(h)}
+                          {h.inferred ? " (IAM allows)" : ""}
                         </span>
                         <span className="step__name">{name(h.to)}</span>
                         <span className="muted small">{to ? kindInfo(to).label : ""}</span>

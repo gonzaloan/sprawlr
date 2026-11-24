@@ -212,17 +212,47 @@ pub fn demo_graph() -> ArchGraph {
     b.edge(&report, &db, Reads, &[(Permitted, "iam:role/report-generator-role")]);
     b.edge(&report, &db_dev, Reads, &[(Declared, "env:DB_HOST")]);
 
+    // Reporting in prod: an upload pipeline whose worker is an EC2 instance. Its code is out of
+    // sight; its instance profile's IAM role is the only map of what it does.
+    let rp = [("app", "reporting"), ("env", "prod")];
+    let uploads = "arn:aws:s3:::reports-uploads".to_string();
+    let jobs = arn("sqs", "reports-jobs");
+    let worker = arn("ec2", "instance/i-0reports7a1");
+    let output = "arn:aws:s3:::reports-output".to_string();
+    let wrole = format!("arn:aws:iam::{ACCT}:role/reports-worker-role");
+    b.node(&uploads, S3Bucket, "reports-uploads", &region, &rp, json!({"public_access_block": true, "versioning": false}), Ok);
+    b.node(&jobs, SqsQueue, "reports-jobs", &region, &rp, json!({"fifo": false, "visibility_timeout_s": 900, "dead_letter_queue": arn("sqs", "reports-jobs-dlq")}), Ok);
+    b.node(&arn("sqs", "reports-jobs-dlq"), SqsQueue, "reports-jobs-dlq", &region, &rp, json!({"fifo": false}), Ok);
+    b.node(&worker, Ec2Instance, "reports-worker", &prod_vpc, &rp,
+        json!({"instance_id": "i-0reports7a1", "instance_type": "m6i.large", "state": "running", "public_ip": false, "subnets": ["prod-private-a"], "security_groups": [sg("sg-api")]}), Ok);
+    b.node(&output, S3Bucket, "reports-output", &region, &rp, json!({"public_access_block": true, "versioning": true}), Ok);
+    let doc = json!({"Statement": [
+        {"Effect": "Allow", "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility"], "Resource": jobs},
+        {"Effect": "Allow", "Action": "s3:GetObject", "Resource": format!("{uploads}/*")},
+        {"Effect": "Allow", "Action": ["s3:PutObject", "s3:PutObjectAcl"], "Resource": format!("{output}/*")},
+        {"Effect": "Allow", "Action": "dynamodb:*", "Resource": "*"}
+    ]});
+    b.node(&wrole, IamRole, "reports-worker-role", &region, &[],
+        json!({"policies": [crate::iam::parse_document("reports-worker-inline", &doc)], "aws_managed_policies": ["CloudWatchAgentServerPolicy"], "instance_profiles": ["reports-worker-profile"], "created_days": 220, "last_used_days": 0}), Unknown);
+    b.edge(&worker, &wrole, AssumesRole, &[(Declared, "ec2:instance_profile")]);
+    b.edge(&uploads, &jobs, Publishes, &[(Declared, "s3:notification")]);
+    let redrive = Evidence { kind: Declared, source: "sqs:redrive_policy".into(), detail: Some("dead-letter queue".into()), seen_at: "2026-11-24T12:00:00Z".parse().unwrap() };
+    b.g.add_evidence(&jobs.as_str().into(), &arn("sqs", "reports-jobs-dlq").as_str().into(), Publishes, redrive);
+
     // ---------------------------------------------------------------- forgotten things
     // An export job nobody calls any more, a NAT gateway from an old dev setup, an IP and a
     // security group left behind by a 2024 migration.
     let legacy = arn("lambda", "function:legacy-export-job");
     b.node(&legacy, LambdaFunction, "legacy-export-job", &region, &[], json!({"runtime": "python3.9", "memory_mb": 1024}), Unknown);
     b.metrics(&legacy, vec![metric("invocations", "Invocations", "count", "Sum", bursts(&[]), None)]);
+    b.g.node_mut(&NodeId(legacy.clone())).unwrap().attrs["activity"] = json!({"days": 14, "total": 0});
     let nat = arn("ec2", "natgateway/nat-0legacy");
     b.node(&nat, NatGateway, "nat-legacy-dev", &dev_vpc, &[("env", "dev")], json!({"subnets": ["dev-private-a"]}), Unknown);
     b.metrics(&nat, vec![metric("bytes_out", "Bytes out", "bytes", "Sum", bursts(&[]), None)]);
     b.node(&arn("ec2", "eip/eipalloc-0legacy"), Other("AWS::EC2::EIP".into()), "203.0.113.24", &region, &[], json!({"associated": false}), Unknown);
     b.node(&sg("sg-migration"), SecurityGroup, "migration-2024-sg", &prod_vpc, &[], json!({"ingress": ["tcp 5432"]}), Unknown);
+    b.node(&format!("arn:aws:iam::{ACCT}:role/ci-deploy-2023"), IamRole, "ci-deploy-2023", &region, &[],
+        json!({"policies": [], "aws_managed_policies": ["AdministratorAccess"], "created_days": 690, "last_used_days": 410}), Unknown);
 
     // ---------------------------------------------------------------- third parties
     let stripe = "ext:api.stripe.com";
@@ -300,11 +330,22 @@ pub fn demo_graph() -> ArchGraph {
         metric("errors", "Errors", "count", "Sum", bursts(&[]), None),
         metric("duration_p95", "Duration p95", "ms", "p95", daily(85.0, 15.0), None),
     ]);
+    b.metrics(&worker, vec![
+        metric("cpu", "CPU", "%", "Maximum", daily(48.0, 20.0), None),
+        metric("network_in", "Network in", "bytes", "Sum", daily(2.1e8, 1.4e8), None),
+    ]);
+    b.metrics(&jobs, vec![
+        metric("sent", "Messages sent", "count", "Sum", daily(45.0, 30.0), None),
+        metric("backlog", "Messages waiting", "count", "Maximum", daily(3.0, 3.0), None),
+        metric("oldest_age", "Oldest message age", "s", "Maximum", daily(240.0, 200.0), None),
+    ]);
     b.metrics(&sindexer, vec![
         metric("invocations", "Invocations", "count", "Sum", daily(900.0, 400.0), None),
         metric("duration_p95", "Duration p95", "ms", "p95", daily(640.0, 90.0), None),
     ]);
 
+    // What the IAM roles allow, as Permitted connections.
+    crate::iam::apply(&mut b.g);
     b.g
 }
 

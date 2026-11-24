@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-24T18:37:16.747049991Z",
+  "taken_at": "2026-11-24T19:05:30.341420043Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -334,6 +334,130 @@
         "associated": false
       },
       "health": "unknown"
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+      "kind": {
+        "type": "ec2_instance"
+      },
+      "name": "reports-worker",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1prod",
+      "aliases": [],
+      "app": {
+        "value": "reporting",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "env": {
+        "value": "prod",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "tags": {
+        "app": "reporting",
+        "env": "prod"
+      },
+      "attrs": {
+        "broad_permissions": [
+          {
+            "access": "read",
+            "pattern": "*",
+            "policy": "reports-worker-inline",
+            "service": "dynamodb"
+          },
+          {
+            "access": "write",
+            "pattern": "*",
+            "policy": "reports-worker-inline",
+            "service": "dynamodb"
+          }
+        ],
+        "instance_id": "i-0reports7a1",
+        "instance_type": "m6i.large",
+        "metrics": [
+          {
+            "alert": null,
+            "key": "cpu",
+            "label": "CPU",
+            "stat": "Maximum",
+            "summary": 38.0,
+            "summary_label": "latest",
+            "unit": "%",
+            "values": [
+              33.9,
+              30.7,
+              28.7,
+              28.0,
+              28.7,
+              30.7,
+              33.9,
+              38.0,
+              42.8,
+              48.0,
+              53.2,
+              58.0,
+              62.1,
+              65.3,
+              67.3,
+              68.0,
+              67.3,
+              65.3,
+              62.1,
+              58.0,
+              53.2,
+              48.0,
+              42.8,
+              38.0
+            ]
+          },
+          {
+            "alert": null,
+            "key": "network_in",
+            "label": "Network in",
+            "stat": "Sum",
+            "summary": 5039999999.999999,
+            "summary_label": "last 24 h",
+            "unit": "bytes",
+            "values": [
+              111005050.6,
+              88756443.5,
+              74770384.3,
+              70000000.0,
+              74770384.3,
+              88756443.5,
+              111005050.6,
+              140000000.0,
+              173765333.7,
+              210000000.0,
+              246234666.3,
+              280000000.0,
+              308994949.4,
+              331243556.5,
+              345229615.7,
+              350000000.0,
+              345229615.7,
+              331243556.5,
+              308994949.4,
+              280000000.0,
+              246234666.3,
+              210000000.0,
+              173765333.7,
+              140000000.0
+            ]
+          }
+        ],
+        "public_ip": false,
+        "security_groups": [
+          "arn:aws:ec2:us-east-1:111122223333:security-group/sg-api"
+        ],
+        "state": "running",
+        "subnets": [
+          "prod-private-a"
+        ]
+      },
+      "health": "ok"
     },
     {
       "id": "arn:aws:ec2:us-east-1:111122223333:natgateway/nat-0legacy",
@@ -1029,6 +1153,112 @@
       "health": "unknown"
     },
     {
+      "id": "arn:aws:iam::111122223333:role/ci-deploy-2023",
+      "kind": {
+        "type": "iam_role"
+      },
+      "name": "ci-deploy-2023",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": null,
+      "env": null,
+      "tags": {},
+      "attrs": {
+        "aws_managed_policies": [
+          "AdministratorAccess"
+        ],
+        "created_days": 690,
+        "last_used_days": 410,
+        "policies": []
+      },
+      "health": "unknown"
+    },
+    {
+      "id": "arn:aws:iam::111122223333:role/reports-worker-role",
+      "kind": {
+        "type": "iam_role"
+      },
+      "name": "reports-worker-role",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": null,
+      "env": null,
+      "tags": {},
+      "attrs": {
+        "aws_managed_policies": [
+          "CloudWatchAgentServerPolicy"
+        ],
+        "created_days": 220,
+        "instance_profiles": [
+          "reports-worker-profile"
+        ],
+        "last_used_days": 0,
+        "policies": [
+          {
+            "name": "reports-worker-inline",
+            "statements": [
+              {
+                "actions": [
+                  "sqs:ReceiveMessage",
+                  "sqs:DeleteMessage",
+                  "sqs:ChangeMessageVisibility"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:sqs:us-east-1:111122223333:reports-jobs"
+                ]
+              },
+              {
+                "actions": [
+                  "s3:GetObject"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:s3:::reports-uploads/*"
+                ]
+              },
+              {
+                "actions": [
+                  "s3:PutObject",
+                  "s3:PutObjectAcl"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:s3:::reports-output/*"
+                ]
+              },
+              {
+                "actions": [
+                  "dynamodb:*"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "health": "unknown"
+    },
+    {
       "id": "arn:aws:kms:us-east-1:111122223333:key/1f2e3d4c-data",
       "kind": {
         "type": "kms_key"
@@ -1489,6 +1719,10 @@
       "env": null,
       "tags": {},
       "attrs": {
+        "activity": {
+          "days": 14,
+          "total": 0
+        },
         "memory_mb": 1024,
         "metrics": [
           {
@@ -1968,6 +2202,66 @@
       "health": "ok"
     },
     {
+      "id": "arn:aws:s3:::reports-output",
+      "kind": {
+        "type": "s3_bucket"
+      },
+      "name": "reports-output",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": {
+        "value": "reporting",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "env": {
+        "value": "prod",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "tags": {
+        "app": "reporting",
+        "env": "prod"
+      },
+      "attrs": {
+        "public_access_block": true,
+        "versioning": true
+      },
+      "health": "ok"
+    },
+    {
+      "id": "arn:aws:s3:::reports-uploads",
+      "kind": {
+        "type": "s3_bucket"
+      },
+      "name": "reports-uploads",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": {
+        "value": "reporting",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "env": {
+        "value": "prod",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "tags": {
+        "app": "reporting",
+        "env": "prod"
+      },
+      "attrs": {
+        "public_access_block": true,
+        "versioning": false
+      },
+      "health": "ok"
+    },
+    {
       "id": "arn:aws:secretsmanager:us-east-1:111122223333:secret:checkout/prod/db-credentials-AbC123",
       "kind": {
         "type": "secret"
@@ -2235,6 +2529,173 @@
       "health": "ok"
     },
     {
+      "id": "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+      "kind": {
+        "type": "sqs_queue"
+      },
+      "name": "reports-jobs",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": {
+        "value": "reporting",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "env": {
+        "value": "prod",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "tags": {
+        "app": "reporting",
+        "env": "prod"
+      },
+      "attrs": {
+        "dead_letter_queue": "arn:aws:sqs:us-east-1:111122223333:reports-jobs-dlq",
+        "fifo": false,
+        "metrics": [
+          {
+            "alert": null,
+            "key": "sent",
+            "label": "Messages sent",
+            "stat": "Sum",
+            "summary": 1080.0,
+            "summary_label": "last 24 h",
+            "unit": "count",
+            "values": [
+              23.8,
+              19.0,
+              16.0,
+              15.0,
+              16.0,
+              19.0,
+              23.8,
+              30.0,
+              37.2,
+              45.0,
+              52.8,
+              60.0,
+              66.2,
+              71.0,
+              74.0,
+              75.0,
+              74.0,
+              71.0,
+              66.2,
+              60.0,
+              52.8,
+              45.0,
+              37.2,
+              30.0
+            ]
+          },
+          {
+            "alert": null,
+            "key": "backlog",
+            "label": "Messages waiting",
+            "stat": "Maximum",
+            "summary": 1.5,
+            "summary_label": "latest",
+            "unit": "count",
+            "values": [
+              0.9,
+              0.4,
+              0.1,
+              0.0,
+              0.1,
+              0.4,
+              0.9,
+              1.5,
+              2.2,
+              3.0,
+              3.8,
+              4.5,
+              5.1,
+              5.6,
+              5.9,
+              6.0,
+              5.9,
+              5.6,
+              5.1,
+              4.5,
+              3.8,
+              3.0,
+              2.2,
+              1.5
+            ]
+          },
+          {
+            "alert": null,
+            "key": "oldest_age",
+            "label": "Oldest message age",
+            "stat": "Maximum",
+            "summary": 140.0,
+            "summary_label": "latest",
+            "unit": "s",
+            "values": [
+              98.6,
+              66.8,
+              46.8,
+              40.0,
+              46.8,
+              66.8,
+              98.6,
+              140.0,
+              188.2,
+              240.0,
+              291.8,
+              340.0,
+              381.4,
+              413.2,
+              433.2,
+              440.0,
+              433.2,
+              413.2,
+              381.4,
+              340.0,
+              291.8,
+              240.0,
+              188.2,
+              140.0
+            ]
+          }
+        ],
+        "visibility_timeout_s": 900
+      },
+      "health": "ok"
+    },
+    {
+      "id": "arn:aws:sqs:us-east-1:111122223333:reports-jobs-dlq",
+      "kind": {
+        "type": "sqs_queue"
+      },
+      "name": "reports-jobs-dlq",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": {
+        "value": "reporting",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "env": {
+        "value": "prod",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "tags": {
+        "app": "reporting",
+        "env": "prod"
+      },
+      "attrs": {
+        "fifo": false
+      },
+      "health": "ok"
+    },
+    {
       "id": "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
       "kind": {
         "type": "state_machine"
@@ -2433,6 +2894,58 @@
           "source": "cloudfront:origin",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "from": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+      "to": "arn:aws:iam::111122223333:role/reports-worker-role",
+      "kind": "assumes_role",
+      "evidence": [
+        {
+          "kind": "declared",
+          "source": "ec2:instance_profile",
+          "detail": null,
+          "seen_at": "2026-11-24T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "from": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+      "to": "arn:aws:s3:::reports-output",
+      "kind": "writes",
+      "evidence": [
+        {
+          "kind": "permitted",
+          "source": "iam:role/reports-worker-role",
+          "detail": "reports-worker-inline: s3:PutObject",
+          "seen_at": "2026-11-24T19:05:30.340058873Z"
+        }
+      ]
+    },
+    {
+      "from": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+      "to": "arn:aws:s3:::reports-uploads",
+      "kind": "reads",
+      "evidence": [
+        {
+          "kind": "permitted",
+          "source": "iam:role/reports-worker-role",
+          "detail": "reports-worker-inline: s3:GetObject",
+          "seen_at": "2026-11-24T19:05:30.340074588Z"
+        }
+      ]
+    },
+    {
+      "from": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+      "to": "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+      "kind": "reads",
+      "evidence": [
+        {
+          "kind": "permitted",
+          "source": "iam:role/reports-worker-role",
+          "detail": "reports-worker-inline: sqs:ReceiveMessage",
+          "seen_at": "2026-11-24T19:05:30.340078015Z"
         }
       ]
     },
@@ -2791,6 +3304,32 @@
       ]
     },
     {
+      "from": "arn:aws:s3:::reports-uploads",
+      "to": "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+      "kind": "publishes",
+      "evidence": [
+        {
+          "kind": "declared",
+          "source": "s3:notification",
+          "detail": null,
+          "seen_at": "2026-11-24T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "from": "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+      "to": "arn:aws:sqs:us-east-1:111122223333:reports-jobs-dlq",
+      "kind": "publishes",
+      "evidence": [
+        {
+          "kind": "declared",
+          "source": "sqs:redrive_policy",
+          "detail": "dead-letter queue",
+          "seen_at": "2026-11-24T12:00:00Z"
+        }
+      ]
+    },
+    {
       "from": "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
       "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
       "kind": "invokes",
@@ -2892,6 +3431,13 @@
       "detail": "IAM allows it to read checkout-orders-db (dev → prod), but nothing in its configuration does."
     },
     {
+      "node": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+      "rule": "broad_permission",
+      "severity": "medium",
+      "title": "Permission covers a whole service",
+      "detail": "Its role can read and write every DynamoDB table (policy reports-worker-inline, resource `*`). Limit it to the resources it uses."
+    },
+    {
       "node": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188",
       "rule": "metric_alert",
       "severity": "medium",
@@ -2906,13 +3452,6 @@
       "detail": "26 errors in the last 24 hours."
     },
     {
-      "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
-      "rule": "unused_permission",
-      "severity": "medium",
-      "title": "Permission never used",
-      "detail": "IAM allows it to publish to platform-events, but nothing in its configuration does."
-    },
-    {
       "node": "arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
       "rule": "internet_entry",
       "severity": "low",
@@ -2925,6 +3464,13 @@
       "severity": "low",
       "title": "Reachable from the internet",
       "detail": "Public entry point (routes to)."
+    },
+    {
+      "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+      "rule": "unused_permission",
+      "severity": "low",
+      "title": "Permission not seen in use",
+      "detail": "IAM allows it to publish to platform-events, but nothing in its configuration or traffic does. Remove what it does not need."
     }
   ],
   "insights": {
@@ -2947,6 +3493,7 @@
             "to": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
             "kind": "invokes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -2954,6 +3501,7 @@
             "to": "arn:aws:es:us-east-1:111122223333:domain/search-products",
             "kind": "reads",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           }
         ],
@@ -2993,6 +3541,7 @@
             "to": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188",
             "kind": "routes_to",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3000,6 +3549,7 @@
             "to": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
             "kind": "routes_to",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3007,6 +3557,7 @@
             "to": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db",
             "kind": "writes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3014,6 +3565,7 @@
             "to": "arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
             "kind": "publishes",
             "mode": "async",
+            "inferred": false,
             "stage": 1
           },
           {
@@ -3021,6 +3573,7 @@
             "to": "arn:aws:sns:us-east-1:111122223333:checkout-notifications",
             "kind": "publishes",
             "mode": "async",
+            "inferred": false,
             "stage": 1
           },
           {
@@ -3028,6 +3581,7 @@
             "to": "arn:aws:events:us-east-1:111122223333:event-bus/platform-events",
             "kind": "publishes",
             "mode": "async",
+            "inferred": false,
             "stage": 1
           },
           {
@@ -3035,6 +3589,7 @@
             "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
             "kind": "reads",
             "mode": "async",
+            "inferred": false,
             "stage": 2
           },
           {
@@ -3042,6 +3597,7 @@
             "to": "arn:aws:lambda:us-east-1:111122223333:function:checkout-email-sender",
             "kind": "subscribes",
             "mode": "async",
+            "inferred": false,
             "stage": 2
           },
           {
@@ -3049,6 +3605,7 @@
             "to": "ext:hooks.slack.com",
             "kind": "subscribes",
             "mode": "async",
+            "inferred": false,
             "stage": 2
           },
           {
@@ -3056,6 +3613,7 @@
             "to": "arn:aws:lambda:us-east-1:111122223333:function:search-indexer",
             "kind": "subscribes",
             "mode": "async",
+            "inferred": false,
             "stage": 2
           },
           {
@@ -3063,6 +3621,7 @@
             "to": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
             "kind": "writes",
             "mode": "sync",
+            "inferred": false,
             "stage": 2
           },
           {
@@ -3070,6 +3629,7 @@
             "to": "ext:api.stripe.com",
             "kind": "invokes",
             "mode": "sync",
+            "inferred": false,
             "stage": 2
           },
           {
@@ -3077,6 +3637,7 @@
             "to": "arn:aws:es:us-east-1:111122223333:domain/search-products",
             "kind": "writes",
             "mode": "sync",
+            "inferred": false,
             "stage": 2
           }
         ],
@@ -3084,6 +3645,60 @@
         "runs_24h": 43200.0,
         "errors_24h": 38.0,
         "sync_depth": 3,
+        "sync_latency_ms": null,
+        "slowest": null
+      },
+      {
+        "id": "flow:arn:aws:s3:::reports-uploads",
+        "name": "Files uploaded to reports-uploads",
+        "app": "reporting",
+        "env": "prod",
+        "trigger": "event",
+        "entry": "arn:aws:s3:::reports-uploads",
+        "nodes": [
+          "arn:aws:s3:::reports-uploads",
+          "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+          "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+          "arn:aws:s3:::reports-output"
+        ],
+        "hops": [
+          {
+            "from": "arn:aws:s3:::reports-uploads",
+            "to": "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+            "kind": "publishes",
+            "mode": "async",
+            "inferred": false,
+            "stage": 1
+          },
+          {
+            "from": "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+            "to": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+            "kind": "reads",
+            "mode": "async",
+            "inferred": true,
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+            "to": "arn:aws:s3:::reports-uploads",
+            "kind": "reads",
+            "mode": "sync",
+            "inferred": true,
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+            "to": "arn:aws:s3:::reports-output",
+            "kind": "writes",
+            "mode": "sync",
+            "inferred": true,
+            "stage": 2
+          }
+        ],
+        "stages": 3,
+        "runs_24h": 1080.0,
+        "errors_24h": 0.0,
+        "sync_depth": 0,
         "sync_latency_ms": null,
         "slowest": null
       },
@@ -3108,6 +3723,7 @@
             "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
             "kind": "invokes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3115,6 +3731,7 @@
             "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
             "kind": "invokes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3122,6 +3739,7 @@
             "to": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
             "kind": "writes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3129,6 +3747,7 @@
             "to": "ext:api.stripe.com",
             "kind": "invokes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3136,6 +3755,7 @@
             "to": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
             "kind": "reads",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           },
           {
@@ -3143,6 +3763,7 @@
             "to": "arn:aws:s3:::billingstack-prod-invoicepdfs3c2b1a-9zz",
             "kind": "writes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           }
         ],
@@ -3170,6 +3791,7 @@
             "to": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev",
             "kind": "writes",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           }
         ],
@@ -3197,6 +3819,7 @@
             "to": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev",
             "kind": "reads",
             "mode": "sync",
+            "inferred": false,
             "stage": 0
           }
         ],
@@ -3214,6 +3837,13 @@
         "utilization": 0.8,
         "headroom": 1.25,
         "basis": "CPU peaked at 80%",
+        "limit": "100%"
+      },
+      {
+        "node": "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+        "utilization": 0.68,
+        "headroom": 1.4705882352941178,
+        "basis": "CPU peaked at 68%",
         "limit": "100%"
       },
       {
@@ -3350,7 +3980,7 @@
       {
         "node": "arn:aws:ec2:us-east-1:111122223333:natgateway/nat-0legacy",
         "state": "zombie",
-        "reason": "No activity in the measured window (24 hours). Check a longer window before removing it.",
+        "reason": "No activity in the last 24 hours. Check a longer window before removing it.",
         "monthly_cost": 32.85
       },
       {
@@ -3366,9 +3996,15 @@
         "monthly_cost": null
       },
       {
+        "node": "arn:aws:iam::111122223333:role/ci-deploy-2023",
+        "state": "orphaned",
+        "reason": "This role has not been used in 410 days.",
+        "monthly_cost": null
+      },
+      {
         "node": "arn:aws:lambda:us-east-1:111122223333:function:legacy-export-job",
         "state": "idle",
-        "reason": "No activity in the measured window (24 hours). Check a longer window before removing it.",
+        "reason": "No activity in the last 14 days.",
         "monthly_cost": null
       }
     ]

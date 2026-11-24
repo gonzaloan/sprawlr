@@ -24,6 +24,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 pub enum Trigger {
     /// Reached from the internet (CloudFront, public API, internet-facing load balancer).
     Internet,
+    /// A data store emits events: S3 notifications, DynamoDB streams.
+    Event,
     /// Starts on its own: a schedule, a manual run, or a caller sprawlr cannot see.
     SelfStarted,
 }
@@ -41,6 +43,9 @@ pub struct Hop {
     pub to: NodeId,
     pub kind: EdgeKind,
     pub mode: Mode,
+    /// Known only from IAM permissions (the resource shows nothing else).
+    #[serde(default)]
+    pub inferred: bool,
     /// 0 for the synchronous part that answers the caller; +1 after every async hop.
     pub stage: usize,
 }
@@ -188,43 +193,80 @@ fn real(e: &crate::Edge) -> bool {
 
 // ------------------------------------------------------------------ flows
 
-/// Next hops from `n` in the direction requests and events travel.
-fn next_hops<'a>(g: &'a ArchGraph, out: &HashMap<&'a NodeId, Vec<(&'a Node, &'a crate::Edge)>>, inc: &HashMap<&'a NodeId, Vec<(&'a Node, &'a crate::Edge)>>, n: &'a Node) -> Vec<(&'a Node, EdgeKind, Mode)> {
+type Adj<'a> = HashMap<&'a NodeId, Vec<(&'a Node, &'a crate::Edge)>>;
+
+fn from_stream(e: &crate::Edge) -> bool {
+    e.evidence.iter().any(|v| v.source == "lambda:event_source_mapping")
+}
+
+/// Next hops from `n` in the direction requests and events travel, with whether the hop is
+/// only known from IAM. `iam_only` holds compute resources for which IAM is all the evidence
+/// there is (an EC2 worker whose code we cannot see): their permitted edges are followed.
+fn next_hops<'a>(out: &Adj<'a>, inc: &Adj<'a>, iam_only: &BTreeSet<&NodeId>, n: &'a Node) -> Vec<(&'a Node, EdgeKind, Mode, bool)> {
     let mut v = Vec::new();
-    if n.kind == NodeKind::ExternalEndpoint || is_store(&n.kind) {
-        return v; // where flows end
+    if n.kind == NodeKind::ExternalEndpoint {
+        return v;
+    }
+    let usable = |e: &crate::Edge, who: &NodeId| real(e) || (iam_only.contains(who) && e.has(EvidenceKind::Permitted));
+    if is_store(&n.kind) {
+        // Stores end flows, except for the events they emit.
+        for (t, e) in out.get(&n.id).into_iter().flatten() {
+            if real(e) && matches!(e.kind, EdgeKind::Invokes | EdgeKind::Publishes) {
+                v.push((*t, e.kind, Mode::Async, false));
+            }
+        }
+        for (c, e) in inc.get(&n.id).into_iter().flatten() {
+            if e.kind == EdgeKind::Reads && from_stream(e) {
+                v.push((*c, EdgeKind::Reads, Mode::Async, false));
+            }
+        }
+        return v;
     }
     for (t, e) in out.get(&n.id).into_iter().flatten() {
-        if !real(e) {
+        if !usable(e, &n.id) {
             continue;
         }
+        let inferred = !real(e);
+        if e.evidence.iter().any(|v| v.detail.as_deref() == Some("dead-letter queue")) {
+            continue; // the failure path, not the flow
+        }
         match e.kind {
-            // A consumer reading a queue is fed by it, not calling it.
+            // A consumer reading a queue is fed by it, not calling it; same for a stream consumer.
             EdgeKind::Reads if is_buffer(&t.kind) => {}
-            EdgeKind::RoutesTo | EdgeKind::Invokes | EdgeKind::Reads | EdgeKind::Writes => v.push((*t, e.kind, Mode::Sync)),
-            EdgeKind::Publishes => v.push((*t, e.kind, if is_buffer(&t.kind) || is_buffer(&n.kind) { Mode::Async } else { Mode::Sync })),
+            EdgeKind::Reads if from_stream(e) => {}
+            EdgeKind::RoutesTo | EdgeKind::Invokes | EdgeKind::Reads | EdgeKind::Writes => v.push((*t, e.kind, Mode::Sync, inferred)),
+            EdgeKind::Publishes => v.push((*t, e.kind, if is_buffer(&t.kind) || is_buffer(&n.kind) { Mode::Async } else { Mode::Sync }, inferred)),
             _ => {}
         }
     }
     if is_buffer(&n.kind) {
         // Consumers of a queue, topic or bus.
         for (c, e) in inc.get(&n.id).into_iter().flatten() {
-            if real(e) && matches!(e.kind, EdgeKind::Reads | EdgeKind::Subscribes) {
-                v.push((*c, e.kind, Mode::Async));
+            if usable(e, &c.id) && matches!(e.kind, EdgeKind::Reads | EdgeKind::Subscribes) {
+                v.push((*c, e.kind, Mode::Async, !real(e)));
             }
         }
     }
-    let _ = g;
     v
 }
 
 pub fn flows(g: &ArchGraph) -> Vec<Flow> {
-    let mut out: HashMap<&NodeId, Vec<(&Node, &crate::Edge)>> = HashMap::new();
-    let mut inc: HashMap<&NodeId, Vec<(&Node, &crate::Edge)>> = HashMap::new();
+    let mut out: Adj = HashMap::new();
+    let mut inc: Adj = HashMap::new();
     for (f, t, e) in g.edges() {
         out.entry(&f.id).or_default().push((t, e));
         inc.entry(&t.id).or_default().push((f, e));
     }
+    // Compute resources whose every runtime connection comes from IAM alone.
+    let iam_only: BTreeSet<&NodeId> = g
+        .nodes()
+        .filter(|n| matches!(n.layer(), Layer::Compute))
+        .filter(|n| {
+            let runtime: Vec<_> = out.get(&n.id).into_iter().flatten().filter(|(_, e)| e.kind.is_runtime_dependency() && e.kind != EdgeKind::UsesSecret && e.kind != EdgeKind::EncryptedWith).collect();
+            !runtime.is_empty() && runtime.iter().all(|(_, e)| !real(e))
+        })
+        .map(|n| &n.id)
+        .collect();
 
     // Entry points.
     let mut entries: Vec<(&Node, Trigger)> = Vec::new();
@@ -239,10 +281,23 @@ pub fn flows(g: &ArchGraph) -> Vec<Flow> {
             continue;
         }
         let called = inc.get(&n.id).into_iter().flatten().any(|(src, e)| real(e) && e.kind.is_runtime_dependency() && src.kind != NodeKind::ExternalEndpoint);
-        let consumer = out.get(&n.id).into_iter().flatten().any(|(t, e)| matches!(e.kind, EdgeKind::Subscribes) || (e.kind == EdgeKind::Reads && is_buffer(&t.kind)));
-        let does_work = out.get(&n.id).into_iter().flatten().any(|(_, e)| real(e) && e.kind.is_runtime_dependency());
+        let consumer = out
+            .get(&n.id)
+            .into_iter()
+            .flatten()
+            .any(|(t, e)| matches!(e.kind, EdgeKind::Subscribes) || (e.kind == EdgeKind::Reads && (is_buffer(&t.kind) || from_stream(e))));
+        let does_work = out.get(&n.id).into_iter().flatten().any(|(_, e)| (real(e) || iam_only.contains(&n.id)) && e.kind.is_runtime_dependency());
         if !called && !consumer && does_work {
             entries.push((n, Trigger::SelfStarted));
+        }
+    }
+    // Stores that emit events and are not written by anything we can see: uploads, imports.
+    for n in g.nodes().filter(|n| is_store(&n.kind)) {
+        let emits = out.get(&n.id).into_iter().flatten().any(|(_, e)| real(e) && matches!(e.kind, EdgeKind::Invokes | EdgeKind::Publishes))
+            || inc.get(&n.id).into_iter().flatten().any(|(_, e)| e.kind == EdgeKind::Reads && from_stream(e));
+        let written = inc.get(&n.id).into_iter().flatten().any(|(_, e)| real(e) && e.kind == EdgeKind::Writes);
+        if emits && !written {
+            entries.push((n, Trigger::Event));
         }
     }
 
@@ -256,12 +311,17 @@ pub fn flows(g: &ArchGraph) -> Vec<Flow> {
         let mut q = VecDeque::from([entry]);
         while let Some(n) = q.pop_front() {
             let stage = stage_of[&n.id];
-            for (t, kind, mode) in next_hops(g, &out, &inc, n) {
-                if t.id == entry.id || !seen_hops.insert((n.id.clone(), t.id.clone())) {
+            let mut next = next_hops(&out, &inc, &iam_only, n);
+            // Reads before writes: the usual order of work inside one step.
+            next.sort_by_key(|(_, k, m, _)| (*m == Mode::Async, !matches!(k, EdgeKind::Reads)));
+            for (t, kind, mode, inferred) in next {
+                // Back to the entry only to read the file that started it all.
+                let back = t.id == entry.id && !(trigger == Trigger::Event && kind == EdgeKind::Reads);
+                if back || !seen_hops.insert((n.id.clone(), t.id.clone())) {
                     continue;
                 }
                 let s = stage + usize::from(mode == Mode::Async);
-                hops.push(Hop { from: n.id.clone(), to: t.id.clone(), kind, mode, stage: s });
+                hops.push(Hop { from: n.id.clone(), to: t.id.clone(), kind, mode, stage: s, inferred });
                 if !stage_of.contains_key(&t.id) && order.len() < 60 {
                     stage_of.insert(t.id.clone(), s);
                     order.push(t.id.clone());
@@ -284,7 +344,9 @@ pub fn flows(g: &ArchGraph) -> Vec<Flow> {
         let errors_24h = order.iter().filter_map(|id| g.node(id)).map(errors).fold(0.0, |a, b| a + b);
         // Executions: the first resource of the synchronous part that counts them
         // (CloudFront has no metric here; the load balancer behind it does).
-        let runs_24h = order.iter().filter(|id| stage_of.get(*id) == Some(&0)).filter_map(|id| g.node(id)).find_map(runs);
+        // Measured at the start; an upload is counted by the queue or function it feeds.
+        let runs_at = |st: usize| order.iter().filter(|id| stage_of.get(*id) == Some(&st)).filter_map(|id| g.node(id)).find_map(runs);
+        let runs_24h = runs_at(0).or_else(|| if trigger == Trigger::Event { runs_at(1) } else { None });
         flows.push(Flow {
             id: format!("flow:{}", entry.id.0),
             name,
@@ -343,6 +405,8 @@ fn flow_name(entry: &Node, trigger: Trigger, app: Option<&str>) -> String {
         (Trigger::Internet, _) => format!("Web requests to {who}"),
         // Long-running services with no visible caller: something outside the scan calls them.
         (Trigger::SelfStarted, NodeKind::EcsService | NodeKind::Ec2Instance) => format!("Work done by {}", display_name(entry)),
+        (Trigger::Event, NodeKind::S3Bucket) => format!("Files uploaded to {}", display_name(entry)),
+        (Trigger::Event, _) => format!("Changes to {}", display_name(entry)),
         (Trigger::SelfStarted, _) => format!("{} runs", display_name(entry)),
     }
 }
@@ -369,6 +433,7 @@ pub fn capacity(g: &ArchGraph) -> Vec<Capacity> {
         };
         let c = match n.kind {
             NodeKind::RdsCluster | NodeKind::RdsInstance => peak(n, "cpu").map(|v| pct("CPU", v)),
+            NodeKind::Ec2Instance => peak(n, "cpu").map(|v| pct("CPU", v)),
             NodeKind::EcsService => match (peak(n, "cpu"), peak(n, "memory")) {
                 (Some(c), Some(m)) if m > c => Some(pct("Memory", m)),
                 (Some(c), _) => Some(pct("CPU", c)),
@@ -597,6 +662,7 @@ fn scale_advice(n: Option<&Node>) -> String {
         Some(NodeKind::RdsCluster) => "Add a reader for read traffic, move to a larger instance class, or put a cache in front of hot queries.".into(),
         Some(NodeKind::RdsInstance) => "Move to a larger instance class or add a read replica for read traffic.".into(),
         Some(NodeKind::EcsService) => "Raise the desired count or add target-tracking auto scaling on CPU and memory.".into(),
+        Some(NodeKind::Ec2Instance) => "Put it in an Auto Scaling group with target tracking on CPU, or move to a larger instance type.".into(),
         Some(NodeKind::LambdaFunction) => "Request a higher concurrency quota or reserve concurrency for this function.".into(),
         Some(NodeKind::DynamoTable) => "Switch to on-demand capacity or raise provisioned capacity and auto scaling limits.".into(),
         Some(NodeKind::ApiGateway) => "Request a higher API Gateway throttle quota.".into(),
@@ -644,7 +710,16 @@ pub fn lifecycle(g: &ArchGraph) -> Vec<Lifecycle> {
             .filter(|m| !matches!(m.get("key").and_then(|k| k.as_str()), Some("errors" | "errors_5xx" | "throttles" | "failed" | "write_throttles")))
             .map(|m| m.get("values").and_then(|v| v.as_array()).map(|v| v.iter().filter_map(|x| x.as_f64()).sum()).unwrap_or(0.0))
             .collect();
-        let idle = !activity.is_empty() && activity.iter().all(|v| *v == 0.0);
+        // A longer window, when the scanner read one, decides: a weekly job is quiet most days.
+        let long = n.attrs.get("activity").and_then(|a| Some((a.get("days")?.as_i64()?, a.get("total")?.as_f64()?)));
+        let idle = match long {
+            Some((_, total)) => total == 0.0,
+            None => !activity.is_empty() && activity.iter().all(|v| *v == 0.0),
+        };
+        let window = match long {
+            Some((d, _)) => format!("{d} days"),
+            None => "24 hours".to_string(),
+        };
 
         let orphan_reason = match &n.kind {
             NodeKind::SecurityGroup if n.name != "default" && !referenced_sgs.contains(&n.id.0) && !touched.contains(&n.id) => {
@@ -654,6 +729,11 @@ pub fn lifecycle(g: &ArchGraph) -> Vec<Lifecycle> {
                 Some("This Elastic IP is not attached to anything.".to_string())
             }
             NodeKind::NatGateway => None, // judged by traffic below
+            NodeKind::IamRole => match (n.attrs.get("last_used_days").and_then(|v| v.as_i64()), n.attrs.get("created_days").and_then(|v| v.as_i64())) {
+                (Some(d), _) if d > 90 => Some(format!("This role has not been used in {d} days.")),
+                (None, Some(c)) if c > 90 && n.attrs.get("policies").is_some() => Some(format!("This role was created {c} days ago and has never been used.")),
+                _ => None,
+            },
             k if !matches!(k.clone().layer(), Layer::Scope | Layer::Network | Layer::External | Layer::Identity) && !touched.contains(&n.id) && !idle => {
                 Some(format!("Nothing connects to this {} and it connects to nothing.", kind_label(k).to_lowercase()))
             }
@@ -662,7 +742,8 @@ pub fn lifecycle(g: &ArchGraph) -> Vec<Lifecycle> {
 
         let (state, reason) = if idle {
             let state = if cost.is_some() { LifeState::Zombie } else { LifeState::Idle };
-            (state, "No activity in the measured window (24 hours). Check a longer window before removing it.".to_string())
+            let hint = if long.is_some() { "" } else { " Check a longer window before removing it." };
+            (state, format!("No activity in the last {window}.{hint}"))
         } else if let Some(r) = orphan_reason {
             (if cost.is_some() { LifeState::Zombie } else { LifeState::Orphaned }, r)
         } else {
@@ -740,7 +821,25 @@ mod tests {
         assert_eq!(states.get("legacy-export-job"), Some(&LifeState::Idle), "{states:?}");
         assert_eq!(states.get("migration-2024-sg"), Some(&LifeState::Orphaned), "{states:?}");
         assert!(!states.contains_key("checkout-api"), "active resources are not listed");
+        assert_eq!(states.get("ci-deploy-2023"), Some(&LifeState::Orphaned), "unused role: {states:?}");
+        assert!(!states.contains_key("reports-worker-role"), "a role in use is not listed");
         let savings: f64 = i.lifecycle.iter().filter_map(|l| l.monthly_cost).sum();
         assert!(savings > 30.0);
+    }
+
+    #[test]
+    fn upload_flow_reaches_an_ec2_worker_known_only_through_iam() {
+        let (g, i) = demo();
+        let f = i.flows.iter().find(|f| f.name == "Files uploaded to reports-uploads").expect("upload flow");
+        assert_eq!(f.trigger, Trigger::Event);
+        let hops: Vec<(String, String, bool)> = f.hops.iter().map(|h| (named(&g, &h.from), named(&g, &h.to), h.inferred)).collect();
+        assert!(hops.contains(&("reports-jobs".into(), "reports-worker".into(), true)), "{hops:?}");
+        assert!(hops.contains(&("reports-worker".into(), "reports-output".into(), true)), "{hops:?}");
+        assert!(hops.contains(&("reports-worker".into(), "reports-uploads".into(), true)), "the worker reads the upload: {hops:?}");
+        assert!(!hops.iter().any(|(_, t, _)| t == "reports-jobs-dlq"), "the DLQ is the failure path: {hops:?}");
+        assert!(f.runs_24h.is_some(), "counted by the queue it feeds");
+        // IAM edges are not followed for resources whose configuration we can read.
+        let checkout = i.flows.iter().find(|f| f.name == "Web requests to checkout").unwrap();
+        assert!(!checkout.hops.iter().any(|h| h.inferred), "checkout is mapped from configuration");
     }
 }

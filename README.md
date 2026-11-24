@@ -11,7 +11,11 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 - **What needs attention**, first thing on screen: where errors start, what saturates first if traffic grows, queues that can lose or duplicate messages, dependencies many flows share. Each item says why and what to do.
 - **Flows**: the paths requests and events take, found from entry points (public endpoints, schedules) and told step by step: what answers the caller, then what happens later through queues and events. Each flow shows its runs, errors, wait time and where it breaks first.
 - **Bottlenecks and what-if**: every resource's busiest hour against its limit (database CPU, service CPU and memory, Lambda concurrency, API throttles). Drag the traffic slider to see what saturates at 1.5× or 3× and in which order.
-- **Probably not needed**: idle, orphaned and forgotten resources (NAT gateways with no traffic, unattached Elastic IPs, unused security groups, functions nobody calls) with the evidence and what they cost a month.
+- **Resources you can't see inside**: an EC2 worker's code is out of sight, but its IAM role says what it can touch. sprawlr reads every role's policies (wildcards, `NotAction`, denies), turns specific grants into dotted "allowed by IAM" connections and follows them in flows when nothing else is known. An S3 upload that notifies a queue read by an EC2 worker becomes the flow "Files uploaded to reports-uploads". Grants on a whole service (`dynamodb:*` on `*`) are reported, never drawn as lines to everything.
+
+  ![An EC2 worker mapped from its IAM role](docs/iam-mapped.png)
+
+- **Probably not needed**: idle, orphaned and forgotten resources (NAT gateways with no traffic, unattached Elastic IPs, unused security groups, functions with no activity in 14 days, IAM roles unused for months) with the evidence and what they cost a month.
 
 - **Apps**, grouped from tags, CloudFormation stacks, naming and connections. Every assignment says how it was inferred.
 - **How components communicate**, with the evidence behind each line: seen in traffic (X-Ray), configured, or only allowed by IAM. Third parties your code calls (payment APIs, webhooks, custom origins) appear as dark blocks.
@@ -29,10 +33,11 @@ Secret values and data are never read. `iam-policy.json` grants only discovery c
 | Source | Gives |
 |---|---|
 | EC2 | VPCs, subnets, security groups and who can reach whom |
+| IAM | roles, their inline and customer-managed policies, instance profiles, last use (`GetAccountAuthorizationDetails`, one paginated call) |
 | Lambda | functions, triggers, roles, references in environment variables |
-| Cloud Control | ECS services and task definitions, load balancers and target groups, RDS/Aurora, API Gateway (HTTP), SQS (with dead-letter queues), SNS, DynamoDB, S3, KMS, Step Functions (definitions are walked), EventBridge rules, CloudFront origins |
+| Cloud Control | EC2 instances, ECS services and task definitions, load balancers and target groups, RDS/Aurora, API Gateway (HTTP), SQS (with dead-letter queues), SNS, DynamoDB, S3 (with event notifications), KMS, Step Functions (definitions are walked), EventBridge rules, CloudFront origins |
 | Native APIs | REST API integrations, SNS subscriptions, secret rotation and last use, tags |
-| Telemetry | CloudWatch alarms and metrics, X-Ray service graph |
+| Telemetry | CloudWatch alarms, 24 hours of metrics, 14 days of activity counts, X-Ray service graph |
 
 Each Cloud Control type is interpreted by a small pure function in `crates/sprawlr-scan/src/extract.rs`. Supporting a new service is one function and a JSON fixture test.
 

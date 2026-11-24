@@ -48,7 +48,7 @@ pub fn node_for_dimensions(ix: &HashMap<String, NodeId>, dims: &[(String, String
     if let (Some(c), Some(s)) = (get("ClusterName"), get("ServiceName")) {
         return ix.get(&format!("ecs:{c}/{s}")).cloned();
     }
-    for key in ["NatGatewayId", "FunctionName", "LoadBalancer", "DBClusterIdentifier", "DBInstanceIdentifier", "QueueName", "TableName", "ApiId", "ApiName", "StateMachineArn", "TopicName", "DistributionId"] {
+    for key in ["InstanceId", "NatGatewayId", "FunctionName", "LoadBalancer", "DBClusterIdentifier", "DBInstanceIdentifier", "QueueName", "TableName", "ApiId", "ApiName", "StateMachineArn", "TopicName", "DistributionId"] {
         if let Some(v) = get(key) {
             return ix.get(v).cloned();
         }
@@ -204,6 +204,16 @@ pub fn specs_for(n: &Node) -> Vec<Spec> {
             ],
             vec![("StateMachineArn", n.id.0.clone())],
         ),
+        NodeKind::Ec2Instance => {
+            let Some(id) = attr("instance_id") else { return vec![] };
+            (
+                vec![
+                    spec("cpu", "CPU", "AWS/EC2", "CPUUtilization", "Maximum", "%"),
+                    spec("network_in", "Network in", "AWS/EC2", "NetworkIn", "Sum", "bytes"),
+                ],
+                vec![("InstanceId", id)],
+            )
+        }
         NodeKind::NatGateway => {
             let Some(id) = attr("nat_gateway_id") else { return vec![] };
             (
@@ -251,17 +261,16 @@ pub fn summarize(s: &Spec, values: &[Option<f64>]) -> Value {
     })
 }
 
-async fn metrics(g: &mut ArchGraph, ctx: &ScanContext) -> anyhow::Result<()> {
-    let cw = aws_sdk_cloudwatch::Client::new(&ctx.sdk);
-    let end = (chrono::Utc::now().timestamp() / 3600) * 3600;
-    let start = end - HOURS * 3600;
+/// Counters that say a resource did something (not errors or throttles).
+pub fn is_activity(s: &Spec) -> bool {
+    s.stat == "Sum" && !matches!(s.key, "errors" | "errors_5xx" | "throttles" | "failed" | "write_throttles")
+}
 
-    let mut wanted: Vec<(NodeId, Spec)> = Vec::new();
-    for n in g.nodes().filter(|n| n.region.as_deref() == Some(ctx.region.as_str())) {
-        for s in specs_for(n) {
-            wanted.push((n.id.clone(), s));
-        }
-    }
+const ACTIVITY_DAYS: i64 = 14;
+
+/// One value slot per `period` between `start` and `start + slots * period`.
+async fn fetch(cw: &aws_sdk_cloudwatch::Client, wanted: &[(NodeId, Spec)], start: i64, period: i64, slots: usize) -> anyhow::Result<HashMap<usize, Vec<Option<f64>>>> {
+    let end = start + period * slots as i64;
     let mut series: HashMap<usize, Vec<Option<f64>>> = HashMap::new();
     for (batch_no, batch) in wanted.chunks(400).enumerate() {
         let queries: Vec<MetricDataQuery> = batch
@@ -270,7 +279,7 @@ async fn metrics(g: &mut ArchGraph, ctx: &ScanContext) -> anyhow::Result<()> {
             .map(|(i, (_, s))| {
                 let dims: Vec<Dimension> = s.dims.iter().map(|(k, v)| Dimension::builder().name(*k).value(v).build()).collect();
                 let metric = Metric::builder().namespace(s.namespace).metric_name(s.metric).set_dimensions(Some(dims)).build();
-                let stat = MetricStat::builder().metric(metric).period(3600).stat(s.stat).build();
+                let stat = MetricStat::builder().metric(metric).period(period as i32).stat(s.stat).build();
                 MetricDataQuery::builder().id(format!("m{}", batch_no * 400 + i)).metric_stat(stat).return_data(true).build()
             })
             .collect();
@@ -284,16 +293,31 @@ async fn metrics(g: &mut ArchGraph, ctx: &ScanContext) -> anyhow::Result<()> {
         while let Some(page) = pages.next().await {
             for r in page?.metric_data_results() {
                 let Some(idx) = r.id().and_then(|id| id.trim_start_matches('m').parse::<usize>().ok()) else { continue };
-                let slots = series.entry(idx).or_insert_with(|| vec![None; HOURS as usize]);
+                let row = series.entry(idx).or_insert_with(|| vec![None; slots]);
                 for (t, v) in r.timestamps().iter().zip(r.values()) {
-                    let slot = (t.secs() - start) / 3600;
-                    if (0..HOURS).contains(&slot) {
-                        slots[slot as usize] = Some(*v * wanted[idx].1.scale);
+                    let slot = (t.secs() - start) / period;
+                    if (0..slots as i64).contains(&slot) {
+                        row[slot as usize] = Some(*v * wanted[idx].1.scale);
                     }
                 }
             }
         }
     }
+    Ok(series)
+}
+
+async fn metrics(g: &mut ArchGraph, ctx: &ScanContext) -> anyhow::Result<()> {
+    let cw = aws_sdk_cloudwatch::Client::new(&ctx.sdk);
+    let end = (chrono::Utc::now().timestamp() / 3600) * 3600;
+    let start = end - HOURS * 3600;
+
+    let mut wanted: Vec<(NodeId, Spec)> = Vec::new();
+    for n in g.nodes().filter(|n| n.region.as_deref() == Some(ctx.region.as_str())) {
+        for s in specs_for(n) {
+            wanted.push((n.id.clone(), s));
+        }
+    }
+    let mut series = fetch(&cw, &wanted, start, 3600, HOURS as usize).await?;
     let mut per_node: HashMap<NodeId, Vec<Value>> = HashMap::new();
     for (idx, (id, s)) in wanted.iter().enumerate() {
         let mut values = series.remove(&idx).unwrap_or_else(|| vec![None; HOURS as usize]);
@@ -306,9 +330,23 @@ async fn metrics(g: &mut ArchGraph, ctx: &ScanContext) -> anyhow::Result<()> {
         }
         per_node.entry(id.clone()).or_default().push(summarize(s, &values));
     }
+
+    // Activity over two weeks, one point a day: a weekly job is not idle.
+    let activity: Vec<(NodeId, Spec)> = wanted.iter().filter(|(_, s)| is_activity(s)).cloned().collect();
+    let day_end = (end / 86_400) * 86_400 + 86_400;
+    let daily = fetch(&cw, &activity, day_end - ACTIVITY_DAYS * 86_400, 86_400, ACTIVITY_DAYS as usize).await?;
+    let mut totals: HashMap<NodeId, f64> = HashMap::new();
+    for (idx, (id, _)) in activity.iter().enumerate() {
+        let sum: f64 = daily.get(&idx).into_iter().flatten().flatten().sum();
+        *totals.entry(id.clone()).or_default() += sum;
+    }
+
     for (id, list) in per_node {
         if let Some(n) = g.node_mut(&id) {
             set_attr(n, "metrics", Value::Array(list));
+            if let Some(t) = totals.get(&id) {
+                set_attr(n, "activity", serde_json::json!({ "days": ACTIVITY_DAYS, "total": t }));
+            }
         }
     }
     Ok(())

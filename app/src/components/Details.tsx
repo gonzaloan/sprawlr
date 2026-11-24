@@ -29,7 +29,7 @@ export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClo
   const out = ix.out.get(id) ?? [];
   const inc = ix.inc.get(id) ?? [];
   const mine = findings.filter((f) => f.node === id);
-  const attrs = Object.entries(n.attrs ?? {}).filter(([key]) => !["placeholder", "metrics", "alarms"].includes(key));
+  const attrs = Object.entries(n.attrs ?? {}).filter(([key]) => !["placeholder", "metrics", "alarms", "policies", "broad_permissions", "activity"].includes(key));
   const metrics = metricsOf(n);
   const alarms = alarmsOf(n);
   const a = (n.attrs ?? {}) as Record<string, unknown>;
@@ -69,6 +69,14 @@ export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClo
           <p>{lifecycle.reason}</p>
         </div>
       )}
+
+      {ix.iamMapped.has(id) && (
+        <p className="note">
+          Mapped from IAM. sprawlr can't see what this {/^[A-Z]{2}/.test(k.label) ? k.label : k.label.toLowerCase()} runs, so its connections come from what its role allows. Dotted lines are allowed, not seen in use.
+        </p>
+      )}
+
+      {n.kind.type === "iam_role" && <Policies attrs={a} />}
 
       {capacity && (
         <section>
@@ -180,6 +188,51 @@ export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClo
         )}
       </section>
     </aside>
+  );
+}
+
+interface Stmt {
+  allow: boolean;
+  actions: string[];
+  not_actions?: string[];
+  resources: string[];
+  not_resources?: string[];
+  conditional?: boolean;
+}
+
+const short = (r: string) => (r === "*" ? "everything" : r.replace(/^arn:aws:[a-z0-9-]+:[a-z0-9-]*:\d*:/, "").replace(/^arn:aws:s3:::/, ""));
+
+/** A role's policies, statement by statement, in words a reader can check against the map. */
+function Policies({ attrs }: { attrs: Record<string, unknown> }) {
+  const policies = (Array.isArray(attrs.policies) ? attrs.policies : []) as { name: string; statements: Stmt[] }[];
+  const managed = (Array.isArray(attrs.aws_managed_policies) ? attrs.aws_managed_policies : []) as string[];
+  const used = typeof attrs.last_used_days === "number" ? (attrs.last_used_days === 0 ? "Used today" : `Last used ${attrs.last_used_days} days ago`) : "Never used";
+  if (!policies.length && !managed.length) return null;
+  return (
+    <section>
+      <h3>Permissions</h3>
+      <p className="muted small">{used}.</p>
+      {policies.map((p) => (
+        <div key={p.name} className="policy">
+          <div className="policy__name">{p.name}</div>
+          {p.statements.map((st, i) => {
+            const acts = st.not_actions?.length ? `everything except ${st.not_actions.join(", ")}` : st.actions.join(", ");
+            const res = st.not_resources?.length ? `everything except ${st.not_resources.map(short).join(", ")}` : st.resources.map(short).join(", ");
+            return (
+              <div key={i} className={`policy__stmt${st.allow ? "" : " policy__stmt--deny"}`}>
+                {st.allow ? "Allows" : "Denies"} <code>{acts}</code> on <code>{res}</code>
+                {st.conditional ? <span className="muted"> when its conditions hold</span> : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      {managed.length > 0 && (
+        <p className="muted small">
+          Also attached, managed by AWS: {managed.join(", ")}. Their contents are not analysed.
+        </p>
+      )}
+    </section>
   );
 }
 

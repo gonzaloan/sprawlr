@@ -171,8 +171,33 @@ async fn session(profile: Option<&str>) -> anyhow::Result<(aws_config::SdkConfig
         loader = loader.profile_name(p);
     }
     let base = loader.load().await;
-    let ident = aws_sdk_sts::Client::new(&base).get_caller_identity().send().await?;
+    let ident = aws_sdk_sts::Client::new(&base).get_caller_identity().send().await.map_err(|e| {
+        let detail = format!("{}", aws_sdk_sts::error::DisplayErrorContext(&e));
+        if signed_out(&detail) {
+            anyhow::Error::new(sprawlr_app::SignInNeeded { profile: profile.map(String::from), reason: detail })
+        } else {
+            anyhow::Error::new(e)
+        }
+    })?;
     Ok((base, ident.account().unwrap_or("unknown").to_string()))
+}
+
+/// Credential failures a person fixes by signing in again (an expired SSO session, no
+/// credentials at all), as opposed to a network or permission problem.
+fn signed_out(detail: &str) -> bool {
+    let d = detail.to_ascii_lowercase();
+    [
+        "expired",
+        "no credentials",
+        "credentialsnotloaded",
+        "could not load credentials",
+        "sso",
+        "token has been revoked",
+        "invalidclienttokenid",
+        "unrecognizedclientexception",
+    ]
+    .iter()
+    .any(|k| d.contains(k))
 }
 
 fn context(base: &aws_config::SdkConfig, account: &str, region: &str) -> ScanContext {
@@ -255,4 +280,18 @@ async fn scan_network(ctx: &ScanContext) -> anyhow::Result<ScanOutput> {
 #[cfg(not(feature = "ec2"))]
 async fn scan_network(_: &ScanContext) -> anyhow::Result<ScanOutput> {
     anyhow::bail!("built without the `ec2` feature")
+}
+
+#[cfg(test)]
+mod sign_in_tests {
+    use super::signed_out;
+
+    #[test]
+    fn expired_sessions_need_a_sign_in_but_outages_do_not() {
+        assert!(signed_out("dispatch failure: the SSO session associated with this profile has expired or is otherwise invalid"));
+        assert!(signed_out("an error occurred while loading credentials: no credentials in the property bag"));
+        assert!(signed_out("ExpiredToken: The security token included in the request is expired"));
+        assert!(!signed_out("dispatch failure: io error: connection refused"));
+        assert!(!signed_out("AccessDenied: User is not authorized to perform sts:GetCallerIdentity"));
+    }
 }

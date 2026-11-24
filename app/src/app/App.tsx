@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { DocFile, Snapshot } from "../domain";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DocFile, Snapshot, Target } from "../domain";
 import { DEMO, download, useBackend } from "../platform";
 import { DocsView } from "../features/docs/DocsView";
 import {
@@ -56,6 +56,24 @@ export default function App() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The tray: a new snapshot (background refresh, the popover, another scan) replaces the one
+  // on screen when that is the stored scan, keeping place and selection. Opening an item from
+  // the popover switches to the stored scan first if a file or the demo is open.
+  const live = useRef({ fromScan, openTarget: (_t: Target) => {} });
+  live.current.fromScan = fromScan;
+  useEffect(() => {
+    if (!backend.can.tray) return;
+    const stops = [
+      backend.onSnapshotChanged((s) => {
+        if (!live.current.fromScan) return;
+        setSnap(s);
+        setSource(`Last scan, ${new Date(s.taken_at).toLocaleString()}`);
+      }),
+      backend.onOpenTarget((t) => live.current.openTarget(t)),
+    ];
+    return () => stops.forEach((p) => p.then((stop) => stop()));
+  }, [backend]);
 
   // Jump to a resource found with search: open its app (or focus it) and select it.
   const find = (id: string) => {
@@ -203,6 +221,21 @@ export default function App() {
   const showMap = tab === "map" && place.kind !== "cleanup";
   const panel: "details" | "flow" | "briefing" | null =
     tab !== "map" || place.kind === "cleanup" ? null : selected && ix.byId.has(selected) ? "details" : flow ? "flow" : place.kind === "overview" ? "briefing" : null;
+  live.current.openTarget = async (t: Target) => {
+    if (!live.current.fromScan) {
+      const s = await backend.lastSnapshot().catch(() => null);
+      if (!s) return;
+      load(s, `Last scan, ${new Date(s.taken_at).toLocaleString()}`, true);
+      // Navigate once the stored scan is on screen (its index is built on the next render).
+      setTimeout(() => live.current.openTarget(t), 50);
+      return;
+    }
+    setTab("map");
+    if (t.type === "flow") go({ kind: "flow", id: t.id });
+    else if (t.type === "cleanup") go({ kind: "cleanup" });
+    else showNode(t.id);
+  };
+
   const showNode = (id: string) => {
     setTab("map");
     const n = ix.byId.get(id);

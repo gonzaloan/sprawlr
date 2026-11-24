@@ -136,13 +136,9 @@ impl ArchGraph {
         let mut edges: Vec<SnapshotEdge> =
             self.edges().map(|(f, t, e)| SnapshotEdge { from: f.id.clone(), to: t.id.clone(), edge: e.clone() }).collect();
         edges.sort_by(|a, b| (&a.from, &a.to, a.edge.kind).cmp(&(&b.from, &b.to, b.edge.kind)));
-        Snapshot {
-            taken_at: chrono::Utc::now(),
-            findings: crate::analysis::findings(self),
-            insights: crate::insights::analyze(self),
-            nodes,
-            edges,
-        }
+        let insights = crate::insights::analyze(self);
+        let status = Some(crate::status::of(self, &insights));
+        Snapshot { taken_at: chrono::Utc::now(), findings: crate::analysis::findings(self), insights, status, nodes, edges }
     }
 
     /// Rebuild a graph from a stored snapshot (e.g. a file opened in the app).
@@ -172,6 +168,20 @@ pub struct Snapshot {
     /// Flows, capacity, risks and lifecycle, computed with the findings.
     #[serde(default)]
     pub insights: crate::insights::Insights,
+    /// The account in one line, for the tray and the briefing. `None` in snapshots written
+    /// before it existed: use `status_or_compute`.
+    #[serde(default)]
+    pub status: Option<crate::status::AccountStatus>,
+}
+
+impl Snapshot {
+    /// The stored status, or one computed from the snapshot (older files have none).
+    pub fn status_or_compute(&self) -> crate::status::AccountStatus {
+        match &self.status {
+            Some(s) => s.clone(),
+            None => crate::status::of(&ArchGraph::from_snapshot(self), &self.insights),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

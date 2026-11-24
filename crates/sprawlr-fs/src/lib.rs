@@ -1,6 +1,7 @@
-//! File-system adapters: the snapshot store, and writing documentation pages into a folder.
+//! File-system adapters: the snapshot store, the desktop settings, and writing documentation
+//! pages into a folder.
 
-use sprawlr_app::SnapshotStore;
+use sprawlr_app::{DesktopSettings, SettingsStore, SnapshotStore};
 use sprawlr_docs::DocFile;
 use sprawlr_domain::Snapshot;
 use std::path::{Component, Path, PathBuf};
@@ -16,16 +17,20 @@ impl FileSnapshotStore {
     }
 }
 
+/// Write then rename: a crash mid-write never leaves half a file behind.
+fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 impl SnapshotStore for FileSnapshotStore {
     fn save(&self, snapshot: &Snapshot) -> anyhow::Result<()> {
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        // Write then rename: a crash mid-write never leaves a half snapshot behind.
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec(snapshot)?)?;
-        std::fs::rename(&tmp, &self.path)?;
-        Ok(())
+        write_atomic(&self.path, &serde_json::to_vec(snapshot)?)
     }
 
     fn latest(&self) -> anyhow::Result<Option<Snapshot>> {
@@ -34,6 +39,32 @@ impl SnapshotStore for FileSnapshotStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+}
+
+/// `settings.json`: the desktop app's choices. A missing or unreadable file is the defaults,
+/// so a bad edit never stops the app from starting.
+pub struct FileSettingsStore {
+    path: PathBuf,
+}
+
+impl FileSettingsStore {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        FileSettingsStore { path: path.into() }
+    }
+}
+
+impl SettingsStore for FileSettingsStore {
+    fn load(&self) -> anyhow::Result<DesktopSettings> {
+        match std::fs::read(&self.path) {
+            Ok(raw) => Ok(serde_json::from_slice(&raw).unwrap_or_default()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DesktopSettings::default()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn save(&self, settings: &DesktopSettings) -> anyhow::Result<()> {
+        write_atomic(&self.path, &serde_json::to_vec_pretty(settings)?)
     }
 }
 
@@ -76,6 +107,18 @@ mod tests {
         infer(&mut g);
         store.save(&g.snapshot()).unwrap();
         assert_eq!(store.latest().unwrap().unwrap().nodes.len(), g.nodes().count());
+    }
+
+    #[test]
+    fn settings_default_when_missing_or_broken() {
+        let dir = temp("settings");
+        let store = FileSettingsStore::new(dir.join("settings.json"));
+        assert_eq!(store.load().unwrap(), DesktopSettings::default());
+        let s = DesktopSettings { notifications: true, background: Some(sprawlr_app::Every::Hour), ..Default::default() };
+        store.save(&s).unwrap();
+        assert_eq!(store.load().unwrap(), s);
+        std::fs::write(dir.join("settings.json"), "{ not json").unwrap();
+        assert_eq!(store.load().unwrap(), DesktopSettings::default());
     }
 
     #[test]

@@ -14,8 +14,15 @@ sprawlr-app = { path = "../../crates/sprawlr-app", features = ["demo"] }
 sprawlr-aws = { path = "../../crates/sprawlr-aws", default-features = false }
 sprawlr-docs = { path = "../../crates/sprawlr-docs" }
 sprawlr-fs = { path = "../../crates/sprawlr-fs" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+chrono = "0.4"
+anyhow = "1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 

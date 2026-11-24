@@ -3,6 +3,8 @@
 //! Adapters implement them: `sprawlr-aws` for a real account, `sprawlr-fs` for storage,
 //! [`crate::demo`] for the fictional demo account. Use cases never name an adapter.
 
+use crate::settings::DesktopSettings;
+use sprawlr_domain::status::Notice;
 use sprawlr_domain::{ArchGraph, Snapshot};
 use std::future::Future;
 use std::sync::Arc;
@@ -45,3 +47,45 @@ pub trait SnapshotStore: Send + Sync {
     fn save(&self, snapshot: &Snapshot) -> anyhow::Result<()>;
     fn latest(&self) -> anyhow::Result<Option<Snapshot>>;
 }
+
+/// Tells a person something changed while they were not looking (desktop notifications).
+pub trait Notifier: Send + Sync {
+    fn notify(&self, notice: &Notice) -> anyhow::Result<()>;
+}
+
+/// The desktop app's choices between runs.
+pub trait SettingsStore: Send + Sync {
+    fn load(&self) -> anyhow::Result<DesktopSettings>;
+    fn save(&self, settings: &DesktopSettings) -> anyhow::Result<()>;
+}
+
+/// Credentials are missing or expired: the person must sign in again (for example
+/// `aws sso login`). Adapters return it inside `anyhow::Error`; drivers find it with
+/// `downcast_ref` to pause background work and say what to run.
+#[derive(Debug, Clone)]
+pub struct SignInNeeded {
+    pub profile: Option<String>,
+    /// The provider's own message, for the log.
+    pub reason: String,
+}
+
+impl SignInNeeded {
+    /// What to run, for the person: `aws sso login --profile prod-admin`.
+    pub fn command(&self) -> String {
+        match &self.profile {
+            Some(p) => format!("aws sso login --profile {p}"),
+            None => "aws sso login".into(),
+        }
+    }
+}
+
+impl std::fmt::Display for SignInNeeded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.profile {
+            Some(p) => write!(f, "can't sign in with {p}"),
+            None => write!(f, "can't sign in with the default credentials"),
+        }
+    }
+}
+
+impl std::error::Error for SignInNeeded {}

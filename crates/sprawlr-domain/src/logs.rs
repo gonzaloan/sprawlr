@@ -32,6 +32,10 @@ pub struct LogErrors {
     /// Error lines in the window, all patterns included.
     pub total: f64,
     pub patterns: Vec<ErrorPattern>,
+    /// When the logs were read. Health refreshes in the background skip logs (they bill per
+    /// GB), so patterns can be older than the metrics next to them.
+    #[serde(default)]
+    pub read_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// One row from Logs Insights: a message (or its first characters), how often, last seen.

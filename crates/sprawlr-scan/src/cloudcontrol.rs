@@ -4,6 +4,7 @@
 use crate::extract::{extract, Lookup};
 use crate::{Progress, ScanContext, ScanOutput};
 use sprawlr_core::{Node, NodeId, NodeKind};
+use aws_sdk_cloudcontrol::error::DisplayErrorContext;
 use aws_sdk_cloudcontrol::Client;
 use futures::{stream, StreamExt};
 use serde_json::{json, Value};
@@ -36,7 +37,8 @@ const CONCURRENCY: usize = 8;
 
 type Item = (String, String, Value); // (type, identifier, properties)
 
-async fn list(c: &Client, t: &str, model: Option<&Value>) -> anyhow::Result<Vec<String>> {
+/// Identifiers, plus whatever properties the list call already returned (often partial).
+async fn list(c: &Client, t: &str, model: Option<&Value>) -> anyhow::Result<Vec<(String, Option<Value>)>> {
     let mut req = c.list_resources().type_name(t);
     if let Some(m) = model {
         req = req.resource_model(m.to_string());
@@ -44,35 +46,52 @@ async fn list(c: &Client, t: &str, model: Option<&Value>) -> anyhow::Result<Vec<
     let mut pages = req.into_paginator().send();
     let mut ids = Vec::new();
     while let Some(page) = pages.next().await {
-        ids.extend(page?.resource_descriptions().iter().filter_map(|r| r.identifier().map(String::from)));
+        for r in page.map_err(|e| anyhow::anyhow!("{}", DisplayErrorContext(&e)))?.resource_descriptions() {
+            let Some(id) = r.identifier() else { continue };
+            let props = r.properties().and_then(|p| serde_json::from_str::<Value>(p).ok()).filter(|v| v.as_object().is_some_and(|o| !o.is_empty()));
+            ids.push((id.to_string(), props));
+        }
     }
     Ok(ids)
 }
 
-/// Full resource models. A resource that cannot be read is kept with empty properties.
-async fn get_all(c: &Client, t: &str, ids: Vec<String>, warnings: &mut Vec<String>) -> Vec<Item> {
-    let results: Vec<(String, Result<Value, String>)> = stream::iter(ids)
-        .map(|id| async move {
+/// Full resource models. If a read fails, the properties from the list call are used instead,
+/// and the warning carries AWS's own error message so it can be acted on.
+async fn get_all(c: &Client, t: &str, ids: Vec<(String, Option<Value>)>, warnings: &mut Vec<String>) -> Vec<Item> {
+    let results: Vec<(String, Option<Value>, Result<Value, String>)> = stream::iter(ids)
+        .map(|(id, listed)| async move {
             let r = c.get_resource().type_name(t).identifier(&id).send().await;
             let props = r
-                .map_err(|e| format!("{e}"))
+                .map_err(|e| DisplayErrorContext(&e).to_string())
                 .map(|o| o.resource_description().and_then(|d| d.properties()).and_then(|p| serde_json::from_str(p).ok()).unwrap_or_default());
-            (id, props)
+            (id, listed, props)
         })
         .buffer_unordered(CONCURRENCY)
         .collect()
         .await;
-    let failed = results.iter().filter(|(_, r)| r.is_err()).count();
-    if failed > 0 {
-        warnings.push(format!("{t}: {failed} resources could not be read in full"));
+    let failures: Vec<(&String, &String, bool)> = results
+        .iter()
+        .filter_map(|(id, listed, r)| r.as_ref().err().map(|e| (id, e, listed.is_some())))
+        .collect();
+    if let Some((id, err, _)) = failures.first() {
+        let partial = failures.iter().filter(|(_, _, p)| *p).count();
+        let note = if partial == failures.len() { ", kept with the data from the listing" } else { "" };
+        warnings.push(format!("{}: {} could not be read in full{note}. First error ({id}): {err}", short(t), plural(failures.len(), "resource")));
     }
-    results.into_iter().map(|(id, r)| (t.to_string(), id, r.unwrap_or_default())).collect()
+    results
+        .into_iter()
+        .map(|(id, listed, r)| (t.to_string(), id, r.ok().or(listed).unwrap_or_default()))
+        .collect()
+}
+
+fn plural(n: usize, word: &str) -> String {
+    if n == 1 { format!("1 {word}") } else { format!("{n} {word}s") }
 }
 
 async fn collect(c: &Client, t: &str, model: Option<&Value>, items: &mut Vec<Item>, warnings: &mut Vec<String>, region: &str) {
     match list(c, t, model).await {
         Ok(ids) => items.extend(get_all(c, t, ids, warnings).await),
-        Err(e) => warnings.push(format!("{region}/{t}: {e}")),
+        Err(e) => warnings.push(format!("{region}/{}: {e}", short(t))),
     }
 }
 
@@ -98,7 +117,6 @@ pub async fn scan(ctx: &ScanContext, include_global: bool, progress: &Progress) 
 
     // Children that Cloud Control only lists under a parent.
     let clusters: Vec<String> = of(&items, "AWS::ECS::Cluster").map(|(_, id, p)| p.get("Arn").and_then(|v| v.as_str()).unwrap_or(id).to_string()).collect();
-    let apis: Vec<String> = of(&items, "AWS::ApiGatewayV2::Api").filter_map(|(_, _, p)| p.get("ApiId")?.as_str().map(String::from)).collect();
     let buses: Vec<String> = of(&items, "AWS::Events::EventBus").filter_map(|(_, _, p)| p.get("Name")?.as_str().map(String::from)).filter(|n| n != "default").collect();
 
     if !clusters.is_empty() {
@@ -113,10 +131,9 @@ pub async fn scan(ctx: &ScanContext, include_global: bool, progress: &Progress) 
         v.dedup();
         v
     };
-    items.extend(get_all(&c, "AWS::ECS::TaskDefinition", task_defs, &mut warnings).await);
-    for api in apis {
-        collect(&c, "AWS::ApiGatewayV2::Integration", Some(&json!({ "ApiId": api })), &mut items, &mut warnings, r).await;
-    }
+    items.extend(get_all(&c, "AWS::ECS::TaskDefinition", task_defs.into_iter().map(|t| (t, None)).collect(), &mut warnings).await);
+    // HTTP API integrations are read natively (apigw::scan_http): Cloud Control's handler
+    // fails on some integration types.
     for bus in buses {
         collect(&c, "AWS::Events::Rule", Some(&json!({ "EventBusName": bus })), &mut items, &mut warnings, r).await;
     }

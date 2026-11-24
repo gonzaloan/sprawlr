@@ -120,6 +120,12 @@ pub struct ScanReport {
     pub unresolved: Vec<String>,
 }
 
+/// Full error chain, including the service's own message (AccessDenied, throttling...).
+fn describe(e: &anyhow::Error) -> String {
+    let chain: Vec<String> = e.chain().map(|c| c.to_string()).collect();
+    chain.join(": ")
+}
+
 async fn session(profile: Option<&str>) -> anyhow::Result<(aws_config::SdkConfig, String)> {
     let mut loader = aws_config::from_env();
     if let Some(p) = profile {
@@ -154,7 +160,7 @@ pub async fn scan(profile: Option<&str>, regions: &[String], opts: &ScanOptions,
         outputs.push(ScanOutput { nodes: vec![region_node], authoritative: true, ..Default::default() });
 
         progress(format!("{region}: reading networks, functions and tags"));
-        let (net, fns, tg, cc, sn, sec, rest) = tokio::join!(
+        let (net, fns, tg, cc, sn, sec, rest, http) = tokio::join!(
             scan_network(&ctx),
             lambda::scan(&ctx),
             tags::scan(&ctx),
@@ -162,13 +168,23 @@ pub async fn scan(profile: Option<&str>, regions: &[String], opts: &ScanOptions,
             sns::scan(&ctx),
             secrets::scan(&ctx),
             apigw::scan(&ctx),
+            apigw::scan_http(&ctx),
         );
-        let parts = [("network", net), ("lambda", fns), ("tags", tg), ("cloudcontrol", cc), ("sns", sn), ("secrets", sec), ("apigateway", rest)];
+        let parts = [
+            ("network", net),
+            ("lambda", fns),
+            ("tags", tg),
+            ("cloudcontrol", cc),
+            ("sns", sn),
+            ("secrets", sec),
+            ("apigateway REST", rest),
+            ("apigateway HTTP", http),
+        ];
         for (name, res) in parts {
             match res {
                 Ok(o) => outputs.push(o),
                 // Missing permissions for one service must not kill the whole scan.
-                Err(e) => outputs.push(ScanOutput { warnings: vec![format!("{region}/{name}: {e:#}")], ..Default::default() }),
+                Err(e) => outputs.push(ScanOutput { warnings: vec![format!("{region}/{name}: {}", describe(&e))], ..Default::default() }),
             }
         }
     }

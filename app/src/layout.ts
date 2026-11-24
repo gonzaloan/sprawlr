@@ -58,7 +58,10 @@ export async function layout(view: View): Promise<Layout> {
 
   const res = await elk.layout({
     id: "root",
-    layoutOptions: ROOT,
+    layoutOptions:
+      view.direction === "DOWN"
+        ? { ...ROOT, "elk.direction": "DOWN", "elk.layered.spacing.nodeNodeBetweenLayers": "56", "elk.spacing.nodeNode": "40" }
+        : ROOT,
     children: [...groups, ...loose],
     edges: view.edges.map((e) => ({ id: e.id, sources: [e.from], targets: [e.to] })),
   });

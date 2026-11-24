@@ -144,7 +144,7 @@ impl ArchGraph {
             .map(|(f, t, e)| SnapshotEdge { from: f.id.clone(), to: t.id.clone(), edge: e.clone() })
             .collect();
         edges.sort_by(|a, b| (&a.from, &a.to, a.edge.kind).cmp(&(&b.from, &b.to, b.edge.kind)));
-        Snapshot { taken_at: chrono::Utc::now(), findings: crate::analysis::findings(self), nodes, edges }
+        Snapshot { taken_at: chrono::Utc::now(), findings: crate::analysis::findings(self), insights: crate::insights::analyze(self), nodes, edges }
     }
 
     /// Rebuild a graph from a stored snapshot (e.g. a file opened in the app).
@@ -171,6 +171,9 @@ pub struct Snapshot {
     /// Computed when the snapshot is taken, so every consumer shows the same findings.
     #[serde(default)]
     pub findings: Vec<crate::analysis::Finding>,
+    /// Flows, capacity, risks and lifecycle, computed with the findings.
+    #[serde(default)]
+    pub insights: crate::insights::Insights,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

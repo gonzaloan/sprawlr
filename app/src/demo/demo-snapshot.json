@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-24T15:07:24.592894859Z",
+  "taken_at": "2026-11-24T18:37:16.747049991Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -317,6 +317,88 @@
       "health": "ok"
     },
     {
+      "id": "arn:aws:ec2:us-east-1:111122223333:eip/eipalloc-0legacy",
+      "kind": {
+        "type": "other",
+        "name": "AWS::EC2::EIP"
+      },
+      "name": "203.0.113.24",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": null,
+      "env": null,
+      "tags": {},
+      "attrs": {
+        "associated": false
+      },
+      "health": "unknown"
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:111122223333:natgateway/nat-0legacy",
+      "kind": {
+        "type": "nat_gateway"
+      },
+      "name": "nat-legacy-dev",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0b2dev",
+      "aliases": [],
+      "app": null,
+      "env": {
+        "value": "dev",
+        "method": "tag",
+        "confidence": 0.95
+      },
+      "tags": {
+        "env": "dev"
+      },
+      "attrs": {
+        "metrics": [
+          {
+            "alert": null,
+            "key": "bytes_out",
+            "label": "Bytes out",
+            "stat": "Sum",
+            "summary": 0.0,
+            "summary_label": "last 24 h",
+            "unit": "bytes",
+            "values": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "subnets": [
+          "dev-private-a"
+        ]
+      },
+      "health": "unknown"
+    },
+    {
       "id": "arn:aws:ec2:us-east-1:111122223333:security-group/sg-alb",
       "kind": {
         "type": "security_group"
@@ -371,6 +453,30 @@
         "type": "security_group"
       },
       "name": "orders-db-sg",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1prod",
+      "aliases": [],
+      "app": null,
+      "env": {
+        "value": "prod",
+        "method": "containment",
+        "confidence": 0.6
+      },
+      "tags": {},
+      "attrs": {
+        "ingress": [
+          "tcp 5432"
+        ]
+      },
+      "health": "unknown"
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:111122223333:security-group/sg-migration",
+      "kind": {
+        "type": "security_group"
+      },
+      "name": "migration-2024-sg",
       "account": "111122223333",
       "region": "us-east-1",
       "parent": "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1prod",
@@ -1126,7 +1232,8 @@
             ]
           }
         ],
-        "runtime": "python3.13"
+        "runtime": "python3.13",
+        "timeout_s": 60
       },
       "health": "alarm"
     },
@@ -1367,6 +1474,62 @@
         "runtime": "nodejs22.x"
       },
       "health": "ok"
+    },
+    {
+      "id": "arn:aws:lambda:us-east-1:111122223333:function:legacy-export-job",
+      "kind": {
+        "type": "lambda_function"
+      },
+      "name": "legacy-export-job",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": null,
+      "env": null,
+      "tags": {},
+      "attrs": {
+        "memory_mb": 1024,
+        "metrics": [
+          {
+            "alert": null,
+            "key": "invocations",
+            "label": "Invocations",
+            "stat": "Sum",
+            "summary": 0.0,
+            "summary_label": "last 24 h",
+            "unit": "count",
+            "values": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "runtime": "python3.9"
+      },
+      "health": "unknown"
     },
     {
       "id": "arn:aws:lambda:us-east-1:111122223333:function:report-generator",
@@ -2066,7 +2229,8 @@
               11.0
             ]
           }
-        ]
+        ],
+        "visibility_timeout_s": 30
       },
       "health": "ok"
     },
@@ -2762,5 +2926,451 @@
       "title": "Reachable from the internet",
       "detail": "Public entry point (routes to)."
     }
-  ]
+  ],
+  "insights": {
+    "flows": [
+      {
+        "id": "flow:arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
+        "name": "API calls to search",
+        "app": "search",
+        "env": "prod",
+        "trigger": "internet",
+        "entry": "arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
+        "nodes": [
+          "arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
+          "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+          "arn:aws:es:us-east-1:111122223333:domain/search-products"
+        ],
+        "hops": [
+          {
+            "from": "arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
+            "to": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+            "kind": "invokes",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+            "to": "arn:aws:es:us-east-1:111122223333:domain/search-products",
+            "kind": "reads",
+            "mode": "sync",
+            "stage": 0
+          }
+        ],
+        "stages": 1,
+        "runs_24h": 124799.99999999999,
+        "errors_24h": 0.0,
+        "sync_depth": 2,
+        "sync_latency_ms": 107.5,
+        "slowest": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler"
+      },
+      {
+        "id": "flow:arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
+        "name": "Web requests to checkout",
+        "app": "checkout",
+        "env": "prod",
+        "trigger": "internet",
+        "entry": "arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
+        "nodes": [
+          "arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
+          "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188",
+          "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+          "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db",
+          "arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+          "arn:aws:sns:us-east-1:111122223333:checkout-notifications",
+          "arn:aws:events:us-east-1:111122223333:event-bus/platform-events",
+          "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+          "arn:aws:lambda:us-east-1:111122223333:function:checkout-email-sender",
+          "ext:hooks.slack.com",
+          "arn:aws:lambda:us-east-1:111122223333:function:search-indexer",
+          "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+          "ext:api.stripe.com",
+          "arn:aws:es:us-east-1:111122223333:domain/search-products"
+        ],
+        "hops": [
+          {
+            "from": "arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
+            "to": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188",
+            "kind": "routes_to",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188",
+            "to": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+            "kind": "routes_to",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+            "to": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db",
+            "kind": "writes",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+            "to": "arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+            "kind": "publishes",
+            "mode": "async",
+            "stage": 1
+          },
+          {
+            "from": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+            "to": "arn:aws:sns:us-east-1:111122223333:checkout-notifications",
+            "kind": "publishes",
+            "mode": "async",
+            "stage": 1
+          },
+          {
+            "from": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+            "to": "arn:aws:events:us-east-1:111122223333:event-bus/platform-events",
+            "kind": "publishes",
+            "mode": "async",
+            "stage": 1
+          },
+          {
+            "from": "arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+            "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "kind": "reads",
+            "mode": "async",
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:sns:us-east-1:111122223333:checkout-notifications",
+            "to": "arn:aws:lambda:us-east-1:111122223333:function:checkout-email-sender",
+            "kind": "subscribes",
+            "mode": "async",
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:sns:us-east-1:111122223333:checkout-notifications",
+            "to": "ext:hooks.slack.com",
+            "kind": "subscribes",
+            "mode": "async",
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:events:us-east-1:111122223333:event-bus/platform-events",
+            "to": "arn:aws:lambda:us-east-1:111122223333:function:search-indexer",
+            "kind": "subscribes",
+            "mode": "async",
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "to": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+            "kind": "writes",
+            "mode": "sync",
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "to": "ext:api.stripe.com",
+            "kind": "invokes",
+            "mode": "sync",
+            "stage": 2
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:search-indexer",
+            "to": "arn:aws:es:us-east-1:111122223333:domain/search-products",
+            "kind": "writes",
+            "mode": "sync",
+            "stage": 2
+          }
+        ],
+        "stages": 3,
+        "runs_24h": 43200.0,
+        "errors_24h": 38.0,
+        "sync_depth": 3,
+        "sync_latency_ms": null,
+        "slowest": null
+      },
+      {
+        "id": "flow:arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
+        "name": "MonthlyClose runs",
+        "app": "billing",
+        "env": "prod",
+        "trigger": "self_started",
+        "entry": "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
+        "nodes": [
+          "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
+          "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+          "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
+          "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+          "ext:api.stripe.com",
+          "arn:aws:s3:::billingstack-prod-invoicepdfs3c2b1a-9zz"
+        ],
+        "hops": [
+          {
+            "from": "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
+            "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "kind": "invokes",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
+            "to": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
+            "kind": "invokes",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "to": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+            "kind": "writes",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+            "to": "ext:api.stripe.com",
+            "kind": "invokes",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
+            "to": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+            "kind": "reads",
+            "mode": "sync",
+            "stage": 0
+          },
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
+            "to": "arn:aws:s3:::billingstack-prod-invoicepdfs3c2b1a-9zz",
+            "kind": "writes",
+            "mode": "sync",
+            "stage": 0
+          }
+        ],
+        "stages": 1,
+        "runs_24h": 1.0,
+        "errors_24h": 26.0,
+        "sync_depth": 2,
+        "sync_latency_ms": 8800.0,
+        "slowest": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2"
+      },
+      {
+        "id": "flow:arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api",
+        "name": "Work done by checkout-api (dev)",
+        "app": "checkout",
+        "env": "dev",
+        "trigger": "self_started",
+        "entry": "arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api",
+        "nodes": [
+          "arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api",
+          "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev"
+        ],
+        "hops": [
+          {
+            "from": "arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api",
+            "to": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev",
+            "kind": "writes",
+            "mode": "sync",
+            "stage": 0
+          }
+        ],
+        "stages": 1,
+        "runs_24h": null,
+        "errors_24h": 0.0,
+        "sync_depth": 1,
+        "sync_latency_ms": null,
+        "slowest": null
+      },
+      {
+        "id": "flow:arn:aws:lambda:us-east-1:111122223333:function:report-generator",
+        "name": "report-generator runs (dev)",
+        "app": "reporting",
+        "env": "dev",
+        "trigger": "self_started",
+        "entry": "arn:aws:lambda:us-east-1:111122223333:function:report-generator",
+        "nodes": [
+          "arn:aws:lambda:us-east-1:111122223333:function:report-generator",
+          "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev"
+        ],
+        "hops": [
+          {
+            "from": "arn:aws:lambda:us-east-1:111122223333:function:report-generator",
+            "to": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev",
+            "kind": "reads",
+            "mode": "sync",
+            "stage": 0
+          }
+        ],
+        "stages": 1,
+        "runs_24h": null,
+        "errors_24h": 0.0,
+        "sync_depth": 1,
+        "sync_latency_ms": null,
+        "slowest": null
+      }
+    ],
+    "capacity": [
+      {
+        "node": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db",
+        "utilization": 0.8,
+        "headroom": 1.25,
+        "basis": "CPU peaked at 80%",
+        "limit": "100%"
+      },
+      {
+        "node": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+        "utilization": 0.63,
+        "headroom": 1.5873015873015872,
+        "basis": "Memory peaked at 63%",
+        "limit": "100%"
+      },
+      {
+        "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+        "utilization": 0.0007088888888888889,
+        "headroom": 1410.6583072100314,
+        "basis": "about 0.7 concurrent executions at the busiest hour",
+        "limit": "1000 per account and region, shared"
+      },
+      {
+        "node": "arn:aws:lambda:us-east-1:111122223333:function:search-indexer",
+        "utilization": 0.0002636111111111111,
+        "headroom": 3793.466807165437,
+        "basis": "about 0.3 concurrent executions at the busiest hour",
+        "limit": "1000 per account and region, shared"
+      },
+      {
+        "node": "arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
+        "utilization": 0.00021666666666666666,
+        "headroom": 4615.384615384616,
+        "basis": "2.2 requests per second at the busiest hour",
+        "limit": "10,000 rps account throttle, shared"
+      },
+      {
+        "node": "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+        "utilization": 0.0002111111111111111,
+        "headroom": 4736.8421052631575,
+        "basis": "about 0.2 concurrent executions at the busiest hour",
+        "limit": "1000 per account and region, shared"
+      },
+      {
+        "node": "arn:aws:lambda:us-east-1:111122223333:function:checkout-email-sender",
+        "utilization": 0.00006133333333333332,
+        "headroom": 16304.347826086958,
+        "basis": "about 0.1 concurrent executions at the busiest hour",
+        "limit": "1000 per account and region, shared"
+      },
+      {
+        "node": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
+        "utilization": 0.0000375,
+        "headroom": 26666.666666666668,
+        "basis": "about 0.0 concurrent executions at the busiest hour",
+        "limit": "1000 per account and region, shared"
+      }
+    ],
+    "insights": [
+      {
+        "kind": "error_origin",
+        "priority": "high",
+        "title": "Errors start at InvoiceProcessor",
+        "detail": "26 errors in the last 24 hours, affecting “Web requests to checkout” and “MonthlyClose runs”; it calls InvoicesTable, api.stripe.com.",
+        "action": "Open its logs for the last hours and look at the most common error message.",
+        "nodes": [
+          "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2"
+        ],
+        "flow": "flow:arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT"
+      },
+      {
+        "kind": "bottleneck",
+        "priority": "high",
+        "title": "checkout-orders-db saturates first",
+        "detail": "CPU peaked at 80%; it reaches its limit at 1.25× today's traffic. Everything that depends on it slows down or fails with it.",
+        "action": "Add a reader for read traffic, move to a larger instance class, or put a cache in front of hot queries.",
+        "nodes": [
+          "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db"
+        ],
+        "flow": null
+      },
+      {
+        "kind": "shared_dependency",
+        "priority": "medium",
+        "title": "InvoicesTable is on 2 flows",
+        "detail": "DynamoDB table sits on the path of Web requests to checkout, MonthlyClose runs. A slowdown or outage there is felt by all of them.",
+        "action": "Give it alarms on latency and errors, and check the flows degrade gracefully when it is slow.",
+        "nodes": [
+          "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC"
+        ],
+        "flow": null
+      },
+      {
+        "kind": "visibility_timeout",
+        "priority": "medium",
+        "title": "checkout-order-events can be processed twice",
+        "detail": "Its visibility timeout is 30 s but InvoiceProcessor may run for 60 s. AWS recommends at least six times the function timeout (360 s).",
+        "action": "Raise the visibility timeout to 360 s or more.",
+        "nodes": [
+          "arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+          "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2"
+        ],
+        "flow": null
+      },
+      {
+        "kind": "missing_dlq",
+        "priority": "medium",
+        "title": "checkout-order-events has no dead-letter queue",
+        "detail": "Messages that keep failing are retried until they expire and then disappear without a trace.",
+        "action": "Add a redrive policy to a dead-letter queue and alarm on its depth.",
+        "nodes": [
+          "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+        ],
+        "flow": null
+      },
+      {
+        "kind": "shared_dependency",
+        "priority": "low",
+        "title": "checkout-orders-db-dev is on 2 flows",
+        "detail": "Aurora / RDS cluster sits on the path of Work done by checkout-api (dev), report-generator runs (dev). A slowdown or outage there is felt by all of them, and it runs in a single availability zone.",
+        "action": "Give it alarms on latency and errors, and check the flows degrade gracefully when it is slow.",
+        "nodes": [
+          "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev"
+        ],
+        "flow": null
+      },
+      {
+        "kind": "slow_hop",
+        "priority": "low",
+        "title": "search-query-handler is most of the wait in “API calls to search”",
+        "detail": "72% of the 108 ms p95 the caller waits.",
+        "action": null,
+        "nodes": [
+          "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler"
+        ],
+        "flow": "flow:arn:aws:apigateway:us-east-1::/restapis/a1b2c3search"
+      }
+    ],
+    "lifecycle": [
+      {
+        "node": "arn:aws:ec2:us-east-1:111122223333:natgateway/nat-0legacy",
+        "state": "zombie",
+        "reason": "No activity in the measured window (24 hours). Check a longer window before removing it.",
+        "monthly_cost": 32.85
+      },
+      {
+        "node": "arn:aws:ec2:us-east-1:111122223333:eip/eipalloc-0legacy",
+        "state": "zombie",
+        "reason": "This Elastic IP is not attached to anything.",
+        "monthly_cost": 3.65
+      },
+      {
+        "node": "arn:aws:ec2:us-east-1:111122223333:security-group/sg-migration",
+        "state": "orphaned",
+        "reason": "No resource uses this security group.",
+        "monthly_cost": null
+      },
+      {
+        "node": "arn:aws:lambda:us-east-1:111122223333:function:legacy-export-job",
+        "state": "idle",
+        "reason": "No activity in the measured window (24 hours). Check a longer window before removing it.",
+        "monthly_cost": null
+      }
+    ]
+  }
 }

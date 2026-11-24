@@ -2,11 +2,16 @@
 
 A local desktop map of your AWS account. It reads your infrastructure (read-only), works out which resources belong to which app and environment, and draws how they talk to each other.
 
-![App view](docs/app-view.png)
+![Whole account with what needs attention](docs/overview.png)
 
-![Whole account](docs/overview.png)
+![A flow under 1.5× traffic](docs/flow-whatif.png)
 
 ## What it shows
+
+- **What needs attention**, first thing on screen: where errors start, what saturates first if traffic grows, queues that can lose or duplicate messages, dependencies many flows share. Each item says why and what to do.
+- **Flows**: the paths requests and events take, found from entry points (public endpoints, schedules) and told step by step: what answers the caller, then what happens later through queues and events. Each flow shows its runs, errors, wait time and where it breaks first.
+- **Bottlenecks and what-if**: every resource's busiest hour against its limit (database CPU, service CPU and memory, Lambda concurrency, API throttles). Drag the traffic slider to see what saturates at 1.5× or 3× and in which order.
+- **Probably not needed**: idle, orphaned and forgotten resources (NAT gateways with no traffic, unattached Elastic IPs, unused security groups, functions nobody calls) with the evidence and what they cost a month.
 
 - **Apps**, grouped from tags, CloudFormation stacks, naming and connections. Every assignment says how it was inferred.
 - **How components communicate**, with the evidence behind each line: seen in traffic (X-Ray), configured, or only allowed by IAM. Third parties your code calls (payment APIs, webhooks, custom origins) appear as dark blocks.

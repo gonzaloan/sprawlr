@@ -3,7 +3,7 @@ import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, type Ed
 import { displayName, kindInfo, metricsOf, primaryMetric, type View } from "../model";
 import { layout, type Layout } from "../layout";
 import { edgeTypes } from "./RouteEdge";
-import { nodeTypes, type Mark } from "./nodes";
+import { nodeTypes, type Load, type Mark } from "./nodes";
 import type { EvidenceKind } from "../types";
 
 interface Props {
@@ -14,6 +14,9 @@ interface Props {
   blast: Set<string> | null;
   onSelect: (id: string | null) => void;
   onOpen: (id: string) => void;
+  /** Load lens: utilisation to draw on each node. */
+  loadOf?: (id: string) => Load | undefined;
+  children?: React.ReactNode;
 }
 
 const LINE: Record<EvidenceKind, { width: number; dash?: string; color: string }> = {
@@ -22,7 +25,7 @@ const LINE: Record<EvidenceKind, { width: number; dash?: string; color: string }
   permitted: { width: 1.4, dash: "2 5", color: "var(--muted)" },
 };
 
-export function MapView({ view, viewKey, findingsByNode, selected, blast, onSelect, onOpen }: Props) {
+export function MapView({ view, viewKey, findingsByNode, selected, blast, onSelect, onOpen, loadOf, children }: Props) {
   const [placed, setPlaced] = useState<{ key: string; items: Layout } | null>(null);
 
   useEffect(() => {
@@ -80,7 +83,7 @@ export function MapView({ view, viewKey, findingsByNode, selected, blast, onSele
         return { ...base, type: "territory", selectable: false, draggable: false, zIndex: -1, data: { name: g.name, detail: cidr ? `VPC ${cidr}` : "VPC" } };
       }
       const v = byId.get(p.id)!;
-      if (v.app) return { ...base, type: "app", data: { app: v.app, mark: markOf(p.id) } };
+      if (v.app) return { ...base, type: "app", data: { app: v.app, mark: markOf(p.id), load: loadOf?.(p.id) } };
       const n = v.node!;
       const k = kindInfo(n);
       return {
@@ -97,6 +100,8 @@ export function MapView({ view, viewKey, findingsByNode, selected, blast, onSele
           owner: v.role === "neighbor" ? n.app?.value : undefined,
           findings: findingsByNode.get(n.id) ?? 0,
           mark: markOf(p.id),
+          step: v.step,
+          load: loadOf?.(p.id),
           spark: (() => {
             const m = primaryMetric(n);
             return m ? { values: m.values, label: m.label, alert: metricsOf(n).some((x) => x.alert) } : undefined;
@@ -105,7 +110,7 @@ export function MapView({ view, viewKey, findingsByNode, selected, blast, onSele
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placed, viewKey, view, selected, blast, neighbours, findingsByNode]);
+  }, [placed, viewKey, view, selected, blast, neighbours, findingsByNode, loadOf]);
 
   const edges: Edge[] = useMemo(
     () =>
@@ -119,6 +124,7 @@ export function MapView({ view, viewKey, findingsByNode, selected, blast, onSele
           source: e.from,
           target: e.to,
           type: "route",
+          animated: e.mode === "async",
           data: { points: placed?.key === viewKey ? placed.items.routes.get(e.id) : undefined },
           label: lit || (!selected && e.count && e.count > 1) ? e.label : undefined,
           className: "route",
@@ -156,12 +162,13 @@ export function MapView({ view, viewKey, findingsByNode, selected, blast, onSele
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--grid)" />
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
-      <Legend />
+      <Legend async={view.edges.some((e) => e.mode === "async")} />
+      {children}
     </div>
   );
 }
 
-function Legend() {
+function Legend({ async }: { async: boolean }) {
   return (
     <div className="legend" aria-label="Legend">
       <p className="legend__title">How we know two things talk</p>
@@ -173,6 +180,14 @@ function Legend() {
           <span>{k === "observed" ? "Seen in traffic" : k === "declared" ? "Configured" : "Allowed by IAM, never configured"}</span>
         </div>
       ))}
+      {async && (
+        <div className="legend__row">
+          <svg width="44" height="10" aria-hidden>
+            <line x1="0" y1="5" x2="44" y2="5" stroke="#1D2B2A" strokeWidth={1.4} strokeDasharray="5 4" />
+          </svg>
+          <span>Moving: happens later, through a queue or event</span>
+        </div>
+      )}
     </div>
   );
 }

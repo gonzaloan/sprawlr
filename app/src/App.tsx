@@ -4,7 +4,27 @@ import demoDocs from "./demo/demo-docs.json";
 import type { DocFile, Snapshot } from "./types";
 import { call, download, inTauri, pickFolder } from "./platform";
 import { DocsView } from "./components/DocsView";
-import { displayName, envName, appView, apps as appSummaries, blastRadius, buildIndex, envs as envList, orphans, overview, resourceFocus } from "./model";
+import {
+  appView,
+  apps as appSummaries,
+  blastRadius,
+  buildIndex,
+  capacityIndex,
+  displayName,
+  envName,
+  envs as envList,
+  flowView,
+  insightsOf,
+  orphans,
+  overview,
+  projected,
+  resourceFocus,
+} from "./model";
+import { Briefing } from "./components/Briefing";
+import { FlowPanel } from "./components/FlowPanel";
+import { Cleanup } from "./components/Cleanup";
+import { LensBar, WhatIfBanner, type LensKind } from "./components/Lens";
+import type { Load } from "./components/nodes";
 import { MapView } from "./components/MapView";
 import { Details } from "./components/Details";
 import { Sidebar, type Place } from "./components/Sidebar";
@@ -26,6 +46,8 @@ export default function App() {
   const [tab, setTab] = useState<"map" | "docs">("map");
   const [docs, setDocs] = useState<DocFile[] | null>(null);
   const [docMsg, setDocMsg] = useState<string | null>(null);
+  const [lens, setLens] = useState<LensKind>("health");
+  const [factor, setFactor] = useState(1);
 
   // Desktop: reopen the last scan instead of the demo.
   useEffect(() => {
@@ -72,12 +94,38 @@ export default function App() {
   }, [fs]);
   const summaries = useMemo(() => appSummaries(ix, env, fs), [ix, env, fs]);
   const { shared, unassigned } = useMemo(() => orphans(ix, env), [ix, env]);
+  const ins = useMemo(() => insightsOf(snap), [snap]);
+  const caps = useMemo(() => capacityIndex(ins), [ins]);
+  const flows = useMemo(() => ins.flows.filter((f) => env === null || f.env === null || f.env === env), [ins, env]);
+  const flow = place.kind === "flow" ? ins.flows.find((f) => f.id === place.id) : undefined;
+  const leftover = useMemo(() => ({ count: ins.lifecycle.length, monthly: ins.lifecycle.reduce((s, l) => s + (l.monthly_cost ?? 0), 0) }), [ins]);
 
   const view = useMemo(() => {
     if (place.kind === "app") return appView(ix, place.name, env);
     if (place.kind === "resource") return resourceFocus(ix, place.id);
+    if (place.kind === "flow" && flow) return flowView(ix, flow);
     return overview(ix, env, summaries, shared);
-  }, [ix, place, env, summaries, shared]);
+  }, [ix, place, env, summaries, shared, flow]);
+
+  // Load lens: utilisation at the chosen traffic level. Apps show their busiest resource.
+  const loadOf = useMemo(() => {
+    if (lens !== "load") return undefined;
+    const pct = (u: number) => `${Math.round(u * 100)}%`;
+    const one = (id: string): Load | undefined => {
+      const c = caps.get(id);
+      const p = projected(c, factor);
+      return c && p ? { ...p, label: `${c.basis}. At ${factor.toFixed(1)}× traffic: ${pct(p.util)} of ${c.limit}.` } : undefined;
+    };
+    return (id: string): Load | undefined => {
+      if (!id.startsWith("app:")) return one(id);
+      const app = id.slice(4);
+      return ix.snap.nodes
+        .filter((n) => n.app?.value === app && (env === null || !n.env || envName(n.env.value) === env))
+        .map((n) => one(n.id))
+        .filter((l): l is Load => !!l)
+        .sort((a, b) => b.util - a.util)[0];
+    };
+  }, [lens, factor, caps, ix, env]);
   const viewKey = `${source}|${JSON.stringify(place)}|${env}`;
 
   const blast = useMemo(() => (blastOn && selected ? blastRadius(ix, selected) : null), [blastOn, selected, ix]);
@@ -137,14 +185,41 @@ export default function App() {
   );
 
   const title =
-    place.kind === "overview" ? "Whole account" : place.kind === "app" ? place.name : (ix.byId.get(place.id) ? displayName(ix.byId.get(place.id)!) : "Resource");
+    place.kind === "overview"
+      ? "Whole account"
+      : place.kind === "app"
+        ? place.name
+        : place.kind === "flow"
+          ? (flow?.name ?? "Flow")
+          : place.kind === "cleanup"
+            ? "Probably not needed"
+            : ix.byId.get(place.id)
+              ? displayName(ix.byId.get(place.id)!)
+              : "Resource";
   const hint =
     place.kind === "overview"
       ? "Light blocks are your apps, dark blocks are outside your account. Lines show who calls whom. Open an app to see its resources."
-      : "Select a resource to inspect it. Dashed ones belong to other apps; double-click to open them.";
+      : place.kind === "flow"
+        ? "Numbers follow a request through the flow. Moving lines happen later, through a queue or event."
+        : place.kind === "cleanup"
+          ? "Resources that look unused, with the evidence and what they cost."
+          : "Select a resource to inspect it. Dashed ones belong to other apps; double-click to open them.";
+  const showMap = tab === "map" && place.kind !== "cleanup";
+  const panel: "details" | "flow" | "briefing" | null =
+    tab !== "map" || place.kind === "cleanup" ? null : selected && ix.byId.has(selected) ? "details" : flow ? "flow" : place.kind === "overview" ? "briefing" : null;
+  const showNode = (id: string) => {
+    setTab("map");
+    const n = ix.byId.get(id);
+    if (n?.app) {
+      if (n.env && env && envName(n.env.value) !== env) setEnv(null);
+      setPlace({ kind: "app", name: n.app.value });
+      setSelected(id);
+      setBlastOn(false);
+    } else go({ kind: "resource", id });
+  };
 
   return (
-    <div className={`shell${selected && tab === "map" ? " shell--details" : ""}`}>
+    <div className={`shell${panel ? " shell--details" : ""}`}>
       <Sidebar
         ix={ix}
         onFind={find}
@@ -159,6 +234,8 @@ export default function App() {
         apps={summaries}
         shared={shared}
         unassigned={unassigned}
+        flows={flows}
+        cleanup={leftover}
         place={place}
         onPlace={go}
         footer={<ScanPanel current={snap} fromScan={fromScan} onLoad={load} onDemo={() => load(DEMO, DEMO_SOURCE)} />}
@@ -168,6 +245,7 @@ export default function App() {
         <header className="stage__head">
           <div className="stage__title">
             <h1>{title}</h1>
+            {place.kind !== "cleanup" && (
             <div className="tabs" role="tablist" aria-label="View">
               {(["map", "docs"] as const).map((t) => (
                 <button key={t} role="tab" aria-selected={tab === t} className={`tabs__opt${tab === t ? " is-on" : ""}`} onClick={() => setTab(t)}>
@@ -175,12 +253,20 @@ export default function App() {
                 </button>
               ))}
             </div>
+            )}
           </div>
-          {tab === "map" && <p className="muted">{hint}</p>}
+          {tab === "map" && (
+            <div className="stage__sub">
+              <p className="muted">{hint}</p>
+              {showMap && <LensBar lens={lens} onLens={setLens} factor={factor} onFactor={setFactor} />}
+            </div>
+          )}
           {tab === "docs" && docMsg && <p className="muted">{docMsg}</p>}
         </header>
         {tab === "docs" ? (
           <DocsView docs={docs} path={docPath} onNavigate={navigateDoc} actions={docActions} />
+        ) : place.kind === "cleanup" ? (
+          <Cleanup ix={ix} items={ins.lifecycle} onShow={showNode} />
         ) : view.nodes.length ? (
           <MapView
             view={view}
@@ -193,7 +279,10 @@ export default function App() {
               setBlastOn(false);
             }}
             onOpen={open}
-          />
+            loadOf={loadOf}
+          >
+            {lens === "load" && <WhatIfBanner ix={ix} ins={ins} factor={factor} />}
+          </MapView>
         ) : (
           <div className="empty">
             <p>Nothing in this environment yet. Pick another environment or scan more regions.</p>
@@ -201,7 +290,21 @@ export default function App() {
         )}
       </main>
 
-      {tab === "map" && selected && ix.byId.has(selected) && (
+      {panel === "briefing" && (
+        <Briefing
+          ix={ix}
+          ins={ins}
+          onNode={showNode}
+          onFlow={(id) => go({ kind: "flow", id })}
+          onCleanup={() => go({ kind: "cleanup" })}
+          onWhatIf={() => {
+            setLens("load");
+            setFactor(1.5);
+          }}
+        />
+      )}
+      {panel === "flow" && flow && <FlowPanel ix={ix} flow={flow} insights={ins.insights} capacity={caps} onNode={(id) => setSelected(id)} />}
+      {panel === "details" && selected && (
         <Details
           ix={ix}
           id={selected}
@@ -216,6 +319,10 @@ export default function App() {
             setSelected(null);
             setBlastOn(false);
           }}
+          capacity={caps.get(selected)}
+          lifecycle={ins.lifecycle.find((l) => l.node === selected)}
+          flows={ins.flows.filter((f) => f.nodes.includes(selected))}
+          onFlow={(id) => go({ kind: "flow", id })}
         />
       )}
     </div>

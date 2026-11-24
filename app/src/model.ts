@@ -1,5 +1,5 @@
 // Pure view logic over a snapshot: no React, no layout. Everything here is testable in isolation.
-import type { Alarm, ArchEdge, ArchNode, EdgeKind, Env, EvidenceKind, Finding, Layer, Method, Metric, Snapshot } from "./types";
+import type { Alarm, ArchEdge, ArchNode, Capacity, EdgeKind, Env, EvidenceKind, Finding, Flow, Insights, Layer, Method, Metric, Snapshot } from "./types";
 
 // ------------------------------------------------------------------ vocabulary
 
@@ -51,8 +51,14 @@ const KINDS: Record<string, KindInfo> = {
   external_endpoint: { layer: "external", label: "External service", glyph: "EXT" },
 };
 
+/** Readable names for types without a dedicated kind. */
+const OTHER: Record<string, KindInfo> = {
+  "AWS::EC2::EIP": { layer: "network", label: "Elastic IP", glyph: "EIP" },
+  "AWS::OpenSearchService::Domain": { layer: "data", label: "OpenSearch domain", glyph: "OS" },
+};
+
 export function kindInfo(n: ArchNode): KindInfo {
-  const k = KINDS[n.kind.type];
+  const k = KINDS[n.kind.type] ?? (n.kind.name ? OTHER[n.kind.name] : undefined);
   if (k) return k;
   // `Other("AWS::OpenSearchService::Domain")` → "OpenSearchService Domain"
   const parts = (n.kind.name ?? "Resource").split("::").slice(1);
@@ -120,6 +126,7 @@ export function fmtValue(v: number | null | undefined, unit: string): string {
   const n = (x: number) =>
     Math.abs(x) >= 1e6 ? `${(x / 1e6).toFixed(1)}M` : Math.abs(x) >= 1e4 ? `${Math.round(x / 1e3)}k` : Math.abs(x) >= 1e3 ? `${(x / 1e3).toFixed(1)}k` : Math.abs(x - Math.round(x)) < 0.05 ? `${Math.round(x)}` : x.toFixed(1);
   if (unit === "ms" && v >= 1000) return `${(v / 1000).toFixed(1)} s`;
+  if (unit === "bytes") return v >= 1e9 ? `${(v / 1e9).toFixed(1)} GB` : v >= 1e6 ? `${(v / 1e6).toFixed(1)} MB` : v >= 1e3 ? `${(v / 1e3).toFixed(1)} KB` : `${Math.round(v)} B`;
   if (unit === "count") return n(v);
   if (unit === "%") return `${n(v)}%`;
   return `${n(v)} ${unit}`;
@@ -229,6 +236,7 @@ export interface ViewNode {
   app?: AppSummary; // overview
   role: "member" | "neighbor" | "external";
   group?: string; // VPC id
+  step?: number; // position in a flow
 }
 
 export interface ViewEdge {
@@ -238,12 +246,15 @@ export interface ViewEdge {
   label: string;
   strength: EvidenceKind;
   count?: number;
+  mode?: "sync" | "async";
 }
 
 export interface View {
   nodes: ViewNode[];
   edges: ViewEdge[];
   groups: ArchNode[]; // VPCs drawn as territories
+  /** Flows read top to bottom, like a story; maps read left to right. */
+  direction?: "RIGHT" | "DOWN";
 }
 
 /** One app: its resources, plus the first ring of things it talks to. */
@@ -346,4 +357,66 @@ export function search(ix: Index, q: string, limit = 8): ArchNode[] {
     .filter((n) => mappable(n) && words.every((w) => hay(n).includes(w)))
     .sort((a, b) => Number(!displayName(a).toLowerCase().startsWith(words[0])) - Number(!displayName(b).toLowerCase().startsWith(words[0])) || displayName(a).localeCompare(displayName(b)))
     .slice(0, limit);
+}
+
+// ------------------------------------------------------------------ insights
+
+export const EMPTY_INSIGHTS: Insights = { flows: [], capacity: [], insights: [], lifecycle: [] };
+
+export const insightsOf = (snap: Snapshot): Insights => ({ ...EMPTY_INSIGHTS, ...(snap.insights ?? {}) });
+
+/**
+ * One flow as a story, top to bottom: its resources in order and its hops. No VPC
+ * territories here: a flow crosses networks (API in a VPC → event bus → Lambda back in the
+ * VPC), and grouping would force the layout to bend edges backwards.
+ */
+export function flowView(ix: Index, f: Flow): View {
+  const nodes: ViewNode[] = f.nodes
+    .map((id, i): ViewNode | null => {
+      const n = ix.byId.get(id);
+      if (!n) return null;
+      return { id, node: n, role: layerOf(n) === "external" ? "external" : "member", step: i + 1 };
+    })
+    .filter((v): v is ViewNode => v !== null);
+  const edges: ViewEdge[] = f.hops.map((h) => {
+    const e = (ix.out.get(h.from) ?? []).find((x) => x.to === h.to && x.kind === h.kind) ?? (ix.out.get(h.to) ?? []).find((x) => x.to === h.from);
+    return { id: `${h.from}|${h.kind}|${h.to}`, from: h.from, to: h.to, label: EDGE_VERB[h.kind], strength: e ? strength(e) : "declared", mode: h.mode };
+  });
+  if (f.trigger === "internet") {
+    const internet = ix.snap.nodes.find((n) => n.kind.type === "internet");
+    if (internet) {
+      nodes.unshift({ id: internet.id, node: internet, role: "external" });
+      edges.unshift({ id: `internet|${f.entry}`, from: internet.id, to: f.entry, label: "routes to", strength: "declared", mode: "sync" });
+    }
+  }
+  return { nodes, edges, groups: [], direction: "DOWN" };
+}
+
+/** Headroom rounded down (the safe reading): two decimals below 2× where it matters, one above. */
+export const fmtX = (h: number) => (h < 2 ? `${(Math.floor(h * 100) / 100).toFixed(2)}×` : `${(Math.floor(h * 10) / 10).toFixed(1)}×`);
+
+export function capacityIndex(ins: Insights): Map<string, Capacity> {
+  return new Map(ins.capacity.map((c) => [c.node, c]));
+}
+
+export type LoadState = "ok" | "busy" | "saturated";
+
+/** Utilisation if all traffic grows by `factor` (linear model, stated in the UI). */
+export function projected(c: Capacity | undefined, factor: number): { util: number; state: LoadState } | undefined {
+  if (!c) return undefined;
+  const util = c.utilization * factor;
+  return { util, state: util >= 1 ? "saturated" : util >= 0.7 ? "busy" : "ok" };
+}
+
+/** Resources that saturate at or below `factor`, in the order they break. */
+export function breakingAt(ins: Insights, factor: number): Capacity[] {
+  return ins.capacity.filter((c) => c.headroom !== null && c.headroom <= factor).sort((a, b) => (a.headroom ?? 0) - (b.headroom ?? 0));
+}
+
+export function flowsThrough(ins: Insights, id: string): Flow[] {
+  return ins.flows.filter((f) => f.nodes.includes(id));
+}
+
+export function fmtCount(v: number | null | undefined): string {
+  return v === null || v === undefined ? "unknown" : fmtValue(v, "count");
 }

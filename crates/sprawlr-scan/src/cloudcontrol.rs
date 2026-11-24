@@ -11,6 +11,8 @@ use serde_json::{json, Value};
 
 /// Regional types, lookups first (target groups and DB instances explain other resources).
 pub const TYPES: &[&str] = &[
+    "AWS::EC2::NatGateway",
+    "AWS::EC2::EIP",
     "AWS::ElasticLoadBalancingV2::TargetGroup",
     "AWS::RDS::DBInstance",
     "AWS::ElasticLoadBalancingV2::LoadBalancer",

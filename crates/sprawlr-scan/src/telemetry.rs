@@ -48,7 +48,7 @@ pub fn node_for_dimensions(ix: &HashMap<String, NodeId>, dims: &[(String, String
     if let (Some(c), Some(s)) = (get("ClusterName"), get("ServiceName")) {
         return ix.get(&format!("ecs:{c}/{s}")).cloned();
     }
-    for key in ["FunctionName", "LoadBalancer", "DBClusterIdentifier", "DBInstanceIdentifier", "QueueName", "TableName", "ApiId", "ApiName", "StateMachineArn", "TopicName", "DistributionId"] {
+    for key in ["NatGatewayId", "FunctionName", "LoadBalancer", "DBClusterIdentifier", "DBInstanceIdentifier", "QueueName", "TableName", "ApiId", "ApiName", "StateMachineArn", "TopicName", "DistributionId"] {
         if let Some(v) = get(key) {
             return ix.get(v).cloned();
         }
@@ -204,6 +204,13 @@ pub fn specs_for(n: &Node) -> Vec<Spec> {
             ],
             vec![("StateMachineArn", n.id.0.clone())],
         ),
+        NodeKind::NatGateway => {
+            let Some(id) = attr("nat_gateway_id") else { return vec![] };
+            (
+                vec![spec("bytes_out", "Bytes out", "AWS/NATGateway", "BytesOutToDestination", "Sum", "bytes")],
+                vec![("NatGatewayId", id)],
+            )
+        }
         NodeKind::SnsTopic => (
             vec![
                 spec("published", "Messages published", "AWS/SNS", "NumberOfMessagesPublished", "Sum", "count"),
@@ -289,9 +296,13 @@ async fn metrics(g: &mut ArchGraph, ctx: &ScanContext) -> anyhow::Result<()> {
     }
     let mut per_node: HashMap<NodeId, Vec<Value>> = HashMap::new();
     for (idx, (id, s)) in wanted.iter().enumerate() {
-        let values = series.remove(&idx).unwrap_or_else(|| vec![None; HOURS as usize]);
-        if values.iter().all(Option::is_none) {
-            continue; // resource idle or metric not published
+        let mut values = series.remove(&idx).unwrap_or_else(|| vec![None; HOURS as usize]);
+        if s.stat == "Sum" {
+            // CloudWatch publishes nothing for a counter that did not move (a Lambda nobody
+            // invoked): no datapoint means zero, which is exactly what idle detection needs.
+            values.iter_mut().for_each(|v| *v = Some(v.unwrap_or(0.0)));
+        } else if values.iter().all(Option::is_none) {
+            continue; // gauge with no data: nothing to show
         }
         per_node.entry(id.clone()).or_default().push(summarize(s, &values));
     }

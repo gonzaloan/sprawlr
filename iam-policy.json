@@ -12,6 +12,8 @@
         "ec2:DescribeVpcs",
         "ec2:DescribeSubnets",
         "ec2:DescribeSecurityGroups",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeNatGateways",
         "lambda:ListFunctions",
         "lambda:ListEventSourceMappings",
         "ecs:List*",

@@ -18,6 +18,8 @@ pub struct Lookup {
     pub cluster_members: HashMap<String, (Vec<String>, BTreeSet<String>)>,
     /// task definition ARN → its resource model
     pub task_defs: HashMap<String, Value>,
+    /// Elastic IP allocations used by NAT gateways (attached even if the EIP model says nothing).
+    pub nat_allocations: BTreeSet<String>,
 }
 
 impl Lookup {
@@ -35,6 +37,11 @@ impl Lookup {
                     if let Some(az) = s(p, "AvailabilityZone") {
                         e.1.insert(az.into());
                     }
+                }
+            }
+            "AWS::EC2::NatGateway" => {
+                if let Some(a) = s(p, "AllocationId") {
+                    self.nat_allocations.insert(a.into());
                 }
             }
             "AWS::ECS::TaskDefinition" => {
@@ -144,6 +151,8 @@ pub fn extract(ctx: &ScanContext, type_name: &str, ident: &str, p: &Value, lk: &
         "AWS::Events::EventBus" => event_bus(ctx, p),
         "AWS::Events::Rule" => event_rule(ctx, p),
         "AWS::CloudFront::Distribution" => distribution(ctx, p),
+        "AWS::EC2::NatGateway" => nat_gateway(ctx, ident, p),
+        "AWS::EC2::EIP" => elastic_ip(ctx, ident, p, lk),
         // Folded into other resources or only used through Lookup.
         "AWS::ECS::Cluster" | "AWS::ECS::TaskDefinition" => Extracted::default(),
         _ => generic(ctx, type_name, ident, p),
@@ -260,6 +269,32 @@ fn target_group(p: &Value) -> Extracted {
         })
         .collect();
     Extracted { node: None, links }
+}
+
+// ------------------------------------------------------------------ network leftovers
+
+fn nat_gateway(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
+    let id = s(p, "NatGatewayId").unwrap_or(ident);
+    let arn = ctx.arn("ec2", &format!("natgateway/{id}")).0;
+    let mut n = node(ctx, &arn, NodeKind::NatGateway, id);
+    n.aliases.push(id.to_string());
+    n.attrs = json!({
+        "nat_gateway_id": id,
+        "connectivity": s(p, "ConnectivityType").unwrap_or("public"),
+        "subnets": s(p, "SubnetId").into_iter().collect::<Vec<_>>(),
+    });
+    Extracted { node: Some(n), links: vec![] }
+}
+
+/// Elastic IPs cost money while unattached; attachment comes from the EIP itself or a NAT gateway.
+fn elastic_ip(ctx: &ScanContext, ident: &str, p: &Value, lk: &Lookup) -> Extracted {
+    let alloc = s(p, "AllocationId").unwrap_or(ident);
+    let ip = s(p, "PublicIp").unwrap_or(alloc);
+    let mut n = node(ctx, &ctx.arn("ec2", &format!("eip/{alloc}")).0, NodeKind::Other("AWS::EC2::EIP".into()), ip);
+    n.aliases.push(alloc.to_string());
+    let associated = ["InstanceId", "NetworkInterfaceId", "AssociationId"].iter().any(|k| s(p, k).is_some()) || lk.nat_allocations.contains(alloc);
+    n.attrs = json!({ "allocation_id": alloc, "associated": associated });
+    Extracted { node: Some(n), links: vec![] }
 }
 
 // ------------------------------------------------------------------ data
@@ -699,6 +734,19 @@ mod tests {
         let l = integration_target("arn:aws:elasticloadbalancing:us-east-1:123:listener/app/web/abc/lis1").unwrap();
         assert_eq!(l.0, Ref::Id(NodeId("arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/web/abc".into())));
         assert_eq!(integration_target("https://api.stripe.com/v1").unwrap().0, Ref::External("api.stripe.com".into()));
+    }
+
+    #[test]
+    fn nat_and_elastic_ips() {
+        let mut lk = Lookup::default();
+        lk.learn("AWS::EC2::NatGateway", &json!({"NatGatewayId": "nat-1", "AllocationId": "eipalloc-nat"}));
+        let nat = extract(&ctx(), "AWS::EC2::NatGateway", "nat-1", &json!({"NatGatewayId": "nat-1", "SubnetId": "subnet-a"}), &lk).node.unwrap();
+        assert_eq!(nat.attrs["subnets"][0], "subnet-a");
+        let free = extract(&ctx(), "AWS::EC2::EIP", "eipalloc-1", &json!({"AllocationId": "eipalloc-1", "PublicIp": "203.0.113.9"}), &lk).node.unwrap();
+        assert_eq!(free.attrs["associated"], false);
+        assert_eq!(free.name, "203.0.113.9");
+        let used_by_nat = extract(&ctx(), "AWS::EC2::EIP", "eipalloc-nat", &json!({"AllocationId": "eipalloc-nat"}), &lk).node.unwrap();
+        assert_eq!(used_by_nat.attrs["associated"], true);
     }
 
     #[test]

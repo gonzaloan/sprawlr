@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import type { AppSummary } from "../model";
+import type { AppSummary, LoadState } from "../model";
 import type { Health, Layer } from "../types";
 import { Spark } from "./Spark";
 
@@ -16,9 +16,24 @@ export type ResourceData = {
   findings: number;
   mark: Mark;
   spark?: { values: (number | null)[]; label: string; alert: boolean };
+  step?: number;
+  load?: Load;
 };
 
-export type AppData = { app: AppSummary; mark: Mark };
+export type Load = { util: number; state: LoadState; label: string };
+
+function LoadBar({ load }: { load: Load }) {
+  const pct = Math.min(load.util, 1.25) / 1.25; // the bar keeps going a little past 100%
+  return (
+    <span className={`load load--${load.state}`} title={load.label}>
+      <span className="load__fill" style={{ width: `${pct * 100}%` }} />
+      <span className="load__limit" aria-hidden />
+      <span className="load__text">{Math.round(load.util * 100)}%</span>
+    </span>
+  );
+}
+
+export type AppData = { app: AppSummary; mark: Mark; load?: Load };
 export type TerritoryData = { name: string; detail: string };
 
 const HEALTH_TEXT: Record<Health, string> = { ok: "Healthy", warning: "Warning", alarm: "Alarm", unknown: "No health data" };
@@ -35,11 +50,16 @@ function Ports() {
 export function ResourceNode({ data, selected }: NodeProps<Node<ResourceData>>) {
   return (
     <div
-      className={`res res--${data.role} mark--${data.mark}${selected ? " is-selected" : ""}`}
+      className={`res res--${data.role} mark--${data.mark}${selected ? " is-selected" : ""}${data.load ? ` res--load-${data.load.state}` : ""}`}
       data-layer={data.layer}
       title={`${data.label}: ${data.name}`}
     >
       <Ports />
+      {data.step !== undefined && (
+        <span className="res__step" aria-label={`Step ${data.step}`}>
+          {data.step}
+        </span>
+      )}
       <span className="res__glyph" aria-hidden>
         {data.glyph}
       </span>
@@ -58,6 +78,7 @@ export function ResourceNode({ data, selected }: NodeProps<Node<ResourceData>>) 
           {data.findings}
         </span>
       )}
+      {data.load && <LoadBar load={data.load} />}
     </div>
   );
 }
@@ -75,6 +96,7 @@ export function AppNode({ data, selected }: NodeProps<Node<AppData>>) {
         {a.health !== "unknown" && <span className={`dot dot--${a.health}`} />}
         {a.findings > 0 ? `${a.findings} to review` : "Nothing to review"}
       </span>
+      {data.load && <LoadBar load={data.load} />}
     </div>
   );
 }

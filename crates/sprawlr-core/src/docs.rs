@@ -167,6 +167,9 @@ impl<'a> Ctx<'a> {
         let mut s = self.header(&format!("Architecture of account {}", self.account));
         let apps = self.apps();
 
+        let ins = crate::insights::analyze(self.g);
+        s.push_str(&self.attention(&ins));
+
         let _ = writeln!(s, "## Apps\n\n| App | Resources | Environments | To review |\n|---|---|---|---|");
         for app in &apps {
             let members: Vec<&Node> = self.g.nodes().filter(|n| app_of(n) == Some(app)).collect();
@@ -188,6 +191,9 @@ impl<'a> Ctx<'a> {
         }
 
         let _ = writeln!(s, "\n## How apps connect\n\n```mermaid\n{}```\n", self.overview_mermaid());
+        s.push_str(&self.flows_section(&ins));
+        s.push_str(&self.capacity_section(&ins));
+        s.push_str(&self.cleanup_section(&ins));
 
         let (shared, unassigned) = self.orphans();
         if !shared.is_empty() {
@@ -205,6 +211,119 @@ impl<'a> Ctx<'a> {
             s.push('\n');
         }
         s.push_str(&self.findings_table(self.findings.iter().collect(), true));
+        s
+    }
+
+    fn name(&self, id: &NodeId) -> String {
+        self.g.node(id).map(display_name).unwrap_or_else(|| id.0.clone())
+    }
+
+    fn attention(&self, ins: &crate::insights::Insights) -> String {
+        use crate::insights::Priority;
+        if ins.insights.is_empty() {
+            return String::new();
+        }
+        let mut s = String::from("## What needs attention\n\n");
+        for x in &ins.insights {
+            let tag = match x.priority {
+                Priority::High => "Act now",
+                Priority::Medium => "Plan for it",
+                Priority::Low => "Good to know",
+            };
+            let _ = write!(s, "- **{tag}: {}.** {}", x.title, x.detail);
+            if let Some(a) = &x.action {
+                let _ = write!(s, " *{a}*");
+            }
+            s.push('\n');
+        }
+        s.push('\n');
+        s
+    }
+
+    fn flows_section(&self, ins: &crate::insights::Insights) -> String {
+        use crate::insights::{Mode, Trigger};
+        if ins.flows.is_empty() {
+            return String::new();
+        }
+        let mut s = String::from("## Flows\n\nHow requests and events move through the account, found from entry points (public endpoints, schedules). Solid arrows wait for an answer; open arrows happen later, through a queue or event.\n\n");
+        for f in &ins.flows {
+            let runs = match f.runs_24h {
+                Some(r) if (r - 1.0).abs() < 0.05 => "1 run a day".to_string(),
+                Some(r) => format!("{} runs a day", fmt_num(r)),
+                None => "runs not measured".into(),
+            };
+            // Only worth saying when it is close enough to matter.
+            let weakest = f
+                .nodes
+                .iter()
+                .filter_map(|id| ins.capacity.iter().find(|c| &c.node == id && c.headroom < 10.0))
+                .min_by(|a, b| a.headroom.total_cmp(&b.headroom));
+            let _ = writeln!(
+                s,
+                "### {}\n\n{}, {runs}, {} errors in 24 h{}.\n",
+                f.name,
+                if f.trigger == Trigger::Internet { "Starts from the internet" } else { "Starts on its own" },
+                fmt_num(f.errors_24h),
+                weakest.map(|c| format!(", breaks first at {} ({})", crate::insights::fmt_x(c.headroom), self.name(&c.node))).unwrap_or_default()
+            );
+            let _ = writeln!(s, "```mermaid\nsequenceDiagram");
+            let mut ids: Vec<&NodeId> = Vec::new();
+            let pid = |ids: &Vec<&NodeId>, id: &NodeId| ids.iter().position(|x| *x == id).map(|i| format!("p{i}"));
+            if f.trigger == Trigger::Internet {
+                let _ = writeln!(s, "  participant internet as Internet");
+            }
+            for id in &f.nodes {
+                ids.push(id);
+                let label = self.name(id).replace([';', '#', ':'], " ");
+                let _ = writeln!(s, "  participant {} as {}", pid(&ids, id).unwrap(), label);
+            }
+            if f.trigger == Trigger::Internet {
+                let _ = writeln!(s, "  internet->>{}: request", pid(&ids, &f.entry).unwrap());
+            }
+            for h in &f.hops {
+                let (Some(a), Some(b)) = (pid(&ids, &h.from), pid(&ids, &h.to)) else { continue };
+                let arrow = if h.mode == Mode::Async { "-)" } else { "->>" };
+                let _ = writeln!(s, "  {a}{arrow}{b}: {}", verb(h.kind));
+            }
+            let _ = writeln!(s, "```\n");
+        }
+        s
+    }
+
+    fn capacity_section(&self, ins: &crate::insights::Insights) -> String {
+        let rows: Vec<_> = ins.capacity.iter().filter(|c| c.headroom.is_finite() && c.headroom < 20.0).take(8).collect();
+        if rows.is_empty() {
+            return String::new();
+        }
+        let mut s = String::from("## If traffic grows\n\nEach resource's busiest hour against its limit, and the traffic multiplier at which it saturates (assuming everything grows one to one).\n\n| Resource | Busiest hour | Limit | Saturates at |\n|---|---|---|---|\n");
+        for c in rows {
+            let _ = writeln!(s, "| {} | {} | {} | **{}** |", cell(&self.name(&c.node)), cell(&c.basis), cell(&c.limit), crate::insights::fmt_x(c.headroom));
+        }
+        s.push('\n');
+        s
+    }
+
+    fn cleanup_section(&self, ins: &crate::insights::Insights) -> String {
+        use crate::insights::LifeState;
+        if ins.lifecycle.is_empty() {
+            return String::new();
+        }
+        let total: f64 = ins.lifecycle.iter().filter_map(|l| l.monthly_cost).sum();
+        let mut s = format!(
+            "## Probably not needed\n\n{} resources look unused{}. Check the evidence before removing anything.\n\n| Resource | State | Why | Per month |\n|---|---|---|---|\n",
+            ins.lifecycle.len(),
+            if total > 0.0 { format!(", about ${total:.2} a month at list price") } else { String::new() }
+        );
+        for l in &ins.lifecycle {
+            let state = match l.state {
+                LifeState::Zombie => "Costs money, unused",
+                LifeState::Idle => "Idle",
+                LifeState::Orphaned => "Orphaned",
+            };
+            let cost = l.monthly_cost.map(|c| format!("${c:.2}")).unwrap_or_else(|| "usage-based".into());
+            let _ = writeln!(s, "| {} | {state} | {} | {cost} |", cell(&self.name(&l.node)), cell(&l.reason));
+        }
+        s.push('\n');
         s
     }
 
@@ -715,5 +834,10 @@ mod tests {
         assert!(d.contains("[checkout](apps/checkout.md)"));
         assert!(d.contains("## Shared by several apps"));
         assert!(d.contains("platform-events"));
+        assert!(d.contains("## What needs attention"));
+        assert!(d.contains("sequenceDiagram"), "flows as sequence diagrams");
+        assert!(d.contains("-)"), "async hops use open arrows");
+        assert!(d.contains("## If traffic grows") && d.contains("checkout-orders-db"));
+        assert!(d.contains("## Probably not needed") && d.contains("nat-legacy-dev"));
     }
 }

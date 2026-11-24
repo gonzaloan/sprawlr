@@ -1,9 +1,14 @@
-import type { ArchNode } from "../types";
-import { displayName, type AppSummary, type Index } from "../model";
+import type { ArchNode, Flow } from "../types";
+import { displayName, fmtCount, type AppSummary, type Index } from "../model";
 import { Find } from "./Find";
 import type { ReactNode } from "react";
 
-export type Place = { kind: "overview" } | { kind: "app"; name: string } | { kind: "resource"; id: string };
+export type Place =
+  | { kind: "overview" }
+  | { kind: "app"; name: string }
+  | { kind: "resource"; id: string }
+  | { kind: "flow"; id: string }
+  | { kind: "cleanup" };
 
 interface Props {
   ix: Index;
@@ -15,12 +20,14 @@ interface Props {
   apps: AppSummary[];
   shared: ArchNode[];
   unassigned: ArchNode[];
+  flows: Flow[];
+  cleanup: { count: number; monthly: number };
   place: Place;
   onPlace: (p: Place) => void;
   footer: ReactNode;
 }
 
-export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, unassigned, place, onPlace, footer }: Props) {
+export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, unassigned, flows, cleanup, place, onPlace, footer }: Props) {
   const is = (p: Place) => JSON.stringify(p) === JSON.stringify(place);
   return (
     <nav className="side" aria-label="Apps and resources">
@@ -44,6 +51,17 @@ export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, un
           <span>Whole account</span>
           <span className="muted">{apps.length} apps</span>
         </button>
+
+        {flows.length > 0 && <h3 className="side__h">Flows</h3>}
+        {flows.map((f) => (
+          <button key={f.id} className={`side__item${is({ kind: "flow", id: f.id }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "flow", id: f.id })}>
+            <span className="side__name">
+              {f.errors_24h > 0 && <span className="dot dot--alarm" aria-label="Errors in the last 24 hours" />}
+              {f.name}
+            </span>
+            <span className="muted">{f.runs_24h ? `${fmtCount(f.runs_24h)}/day` : ""}</span>
+          </button>
+        ))}
 
         <h3 className="side__h">Apps</h3>
         {apps.map((a) => (
@@ -69,6 +87,13 @@ export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, un
             <span className="side__name">{displayName(n)}</span>
           </button>
         ))}
+
+        {cleanup.count > 0 && (
+          <button className={`side__item side__item--cleanup${is({ kind: "cleanup" }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "cleanup" })}>
+            <span>Probably not needed</span>
+            <span className="muted">{cleanup.monthly > 0 ? `$${cleanup.monthly.toFixed(0)}/mo` : cleanup.count}</span>
+          </button>
+        )}
       </div>
 
       <div className="side__foot">{footer}</div>

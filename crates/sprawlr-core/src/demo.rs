@@ -143,7 +143,7 @@ pub fn demo_graph() -> ArchGraph {
     b.node(&api, EcsService, "checkout-api", &prod_vpc, &ck, json!({"cluster": "prod-cluster", "launch_type": "FARGATE", "desired": 4, "task_definition": "checkout-api:42", "images": ["111122223333.dkr.ecr.us-east-1.amazonaws.com/checkout-api:2026.11.3"], "cpu": "1024", "memory": "2048", "subnets": ["prod-private-a", "prod-private-b"], "security_groups": [sg("sg-api")]}), Ok);
     b.node(&db, RdsCluster, "checkout-orders-db", &prod_vpc, &ck, json!({"engine": "aurora-postgresql", "multi_az": true, "encrypted": true, "security_groups": [sg("sg-db")]}), Warning);
     b.node(&secret, Secret, "checkout/prod/db-credentials", &region, &ck, json!({"rotation_enabled": true, "last_rotated_days": 12}), Unknown);
-    b.node(&orders_q, SqsQueue, "checkout-order-events", &region, &ck, json!({"fifo": false}), Ok);
+    b.node(&orders_q, SqsQueue, "checkout-order-events", &region, &ck, json!({"fifo": false, "visibility_timeout_s": 30}), Ok);
     b.node(&notif, SnsTopic, "checkout-notifications", &region, &ck, json!({}), Ok);
     b.node(&mailer, LambdaFunction, "checkout-email-sender", &region, &ck, json!({"runtime": "nodejs22.x", "memory_mb": 256}), Ok);
     b.node(&role, IamRole, "checkout-api-task-role", &region, &[], json!({"placeholder": true}), Unknown);
@@ -168,7 +168,7 @@ pub fn demo_graph() -> ArchGraph {
     let table = arn("dynamodb", "table/BillingStack-prod-InvoicesTable7D1E0A-1ABC");
     let pdfs = "arn:aws:s3:::billingstack-prod-invoicepdfs3c2b1a-9zz".to_string();
     b.node(&invoices, LambdaFunction, "BillingStack-prod-InvoiceProcessor9F3A21-XK2", &region, &bl,
-        json!({"runtime": "python3.13", "memory_mb": 512, "env_keys": ["INVOICES_TABLE", "STRIPE_API_KEY"], "env_plaintext_secret_keys": ["STRIPE_API_KEY"]}), Alarm);
+        json!({"runtime": "python3.13", "memory_mb": 512, "timeout_s": 60, "env_keys": ["INVOICES_TABLE", "STRIPE_API_KEY"], "env_plaintext_secret_keys": ["STRIPE_API_KEY"]}), Alarm);
     b.node(&renderer, LambdaFunction, "BillingStack-prod-PdfRenderer4B7C11-QW8", &region, &bl, json!({"runtime": "python3.13", "memory_mb": 1024}), Ok);
     b.node(&close, StateMachine, "BillingStack-prod-MonthlyClose", &region, &bl, json!({"type": "STANDARD"}), Ok);
     b.node(&table, DynamoTable, "BillingStack-prod-InvoicesTable7D1E0A-1ABC", &region, &bl, json!({"billing_mode": "PAY_PER_REQUEST", "pitr": true}), Ok);
@@ -211,6 +211,18 @@ pub fn demo_graph() -> ArchGraph {
     b.node(&report, LambdaFunction, "report-generator", &dev_vpc, &[("app", "reporting"), ("env", "dev")], json!({"runtime": "python3.12"}), Unknown);
     b.edge(&report, &db, Reads, &[(Permitted, "iam:role/report-generator-role")]);
     b.edge(&report, &db_dev, Reads, &[(Declared, "env:DB_HOST")]);
+
+    // ---------------------------------------------------------------- forgotten things
+    // An export job nobody calls any more, a NAT gateway from an old dev setup, an IP and a
+    // security group left behind by a 2024 migration.
+    let legacy = arn("lambda", "function:legacy-export-job");
+    b.node(&legacy, LambdaFunction, "legacy-export-job", &region, &[], json!({"runtime": "python3.9", "memory_mb": 1024}), Unknown);
+    b.metrics(&legacy, vec![metric("invocations", "Invocations", "count", "Sum", bursts(&[]), None)]);
+    let nat = arn("ec2", "natgateway/nat-0legacy");
+    b.node(&nat, NatGateway, "nat-legacy-dev", &dev_vpc, &[("env", "dev")], json!({"subnets": ["dev-private-a"]}), Unknown);
+    b.metrics(&nat, vec![metric("bytes_out", "Bytes out", "bytes", "Sum", bursts(&[]), None)]);
+    b.node(&arn("ec2", "eip/eipalloc-0legacy"), Other("AWS::EC2::EIP".into()), "203.0.113.24", &region, &[], json!({"associated": false}), Unknown);
+    b.node(&sg("sg-migration"), SecurityGroup, "migration-2024-sg", &prod_vpc, &[], json!({"ingress": ["tcp 5432"]}), Unknown);
 
     // ---------------------------------------------------------------- third parties
     let stripe = "ext:api.stripe.com";

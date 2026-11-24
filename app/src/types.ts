@@ -60,6 +60,68 @@ export interface Snapshot {
   nodes: ArchNode[];
   edges: ArchEdge[];
   findings?: Finding[];
+  insights?: Insights;
+}
+
+// ---- insights.rs
+
+export interface Hop {
+  from: string;
+  to: string;
+  kind: EdgeKind;
+  mode: "sync" | "async";
+  stage: number;
+}
+
+export interface Flow {
+  id: string;
+  name: string;
+  app: string | null;
+  env: string | null;
+  trigger: "internet" | "self_started";
+  entry: string;
+  nodes: string[];
+  hops: Hop[];
+  stages: number;
+  runs_24h: number | null;
+  errors_24h: number;
+  sync_depth: number;
+  sync_latency_ms: number | null;
+  slowest: string | null;
+}
+
+export interface Capacity {
+  node: string;
+  utilization: number;
+  headroom: number | null; // null when unbounded (serialised infinity)
+  basis: string;
+  limit: string;
+}
+
+export type Priority = "high" | "medium" | "low";
+
+export interface Insight {
+  kind: string;
+  priority: Priority;
+  title: string;
+  detail: string;
+  action: string | null;
+  nodes: string[];
+  flow: string | null;
+}
+
+export interface Lifecycle {
+  node: string;
+  state: "idle" | "orphaned" | "zombie";
+  reason: string;
+  monthly_cost: number | null;
+}
+
+export interface Insights {
+  flows: Flow[];
+  capacity: Capacity[];
+  insights: Insight[];
+  lifecycle: Lifecycle[];
 }
 
 /** Generated Markdown page (docs.rs). */

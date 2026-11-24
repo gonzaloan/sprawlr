@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { EDGE_VERB, EVIDENCE_LABEL, METHOD_LABEL, alarmsOf, displayName, envName, fmtValue, kindInfo, metricsOf, strength, vpcOf, type Index } from "../model";
+import { EDGE_VERB, EVIDENCE_LABEL, METHOD_LABEL, alarmsOf, displayName, envName, fmtValue, fmtX, kindInfo, metricsOf, strength, vpcOf, type Index } from "../model";
 import { Spark } from "./Spark";
-import type { ArchEdge, Finding } from "../types";
+import type { ArchEdge, Capacity, Finding, Flow, Lifecycle } from "../types";
 
 interface Props {
   ix: Index;
@@ -11,9 +11,15 @@ interface Props {
   onBlast: () => void;
   onSelect: (id: string) => void;
   onClose: () => void;
+  capacity?: Capacity;
+  lifecycle?: Lifecycle;
+  flows: Flow[];
+  onFlow: (id: string) => void;
 }
 
-export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClose }: Props) {
+const LIFE: Record<Lifecycle["state"], string> = { zombie: "Costs money, looks unused", idle: "Idle", orphaned: "Orphaned" };
+
+export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClose, capacity, lifecycle, flows, onFlow }: Props) {
   const [raw, setRaw] = useState(false);
   const n = ix.byId.get(id);
   if (!n) return null;
@@ -54,6 +60,44 @@ export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClo
               <p>{f.detail}</p>
             </div>
           ))}
+        </section>
+      )}
+
+      {lifecycle && (
+        <div className="finding finding--medium">
+          <strong>{LIFE[lifecycle.state]}{lifecycle.monthly_cost !== null ? `, about $${lifecycle.monthly_cost.toFixed(2)} a month` : ""}</strong>
+          <p>{lifecycle.reason}</p>
+        </div>
+      )}
+
+      {capacity && (
+        <section>
+          <h3>Headroom</h3>
+          <div className={`headroom${capacity.headroom !== null && capacity.headroom < 1.5 ? " is-bad" : ""}`}>
+            <span className="load load--static">
+              <span className="load__fill" style={{ width: `${Math.min(capacity.utilization, 1) * 100}%` }} />
+            </span>
+            <p>
+              {capacity.basis}. {capacity.headroom !== null ? <>It reaches its limit at <strong>{fmtX(capacity.headroom)}</strong> today's traffic.</> : "No limit in sight."}
+            </p>
+            <p className="muted small">Limit: {capacity.limit}.</p>
+          </div>
+        </section>
+      )}
+
+      {flows.length > 0 && (
+        <section>
+          <h3>Part of</h3>
+          <ul className="conns">
+            {flows.map((f) => (
+              <li key={f.id}>
+                <button className="conn conn--flow" onClick={() => onFlow(f.id)}>
+                  <span className="conn__name">{f.name}</span>
+                  <span className="muted">step {f.nodes.indexOf(id) + 1}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

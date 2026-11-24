@@ -5,6 +5,7 @@ pub mod graph;
 pub mod iam;
 pub mod infer;
 pub mod insights;
+pub mod logs;
 pub mod model;
 
 pub use graph::{ArchGraph, Snapshot};

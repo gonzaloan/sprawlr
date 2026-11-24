@@ -75,6 +75,26 @@ export interface Hop {
   inferred?: boolean;
 }
 
+export interface FlowError {
+  node: string;
+  message: string;
+  count: number;
+  last_seen?: string | null;
+}
+
+export interface ErrorPattern {
+  message: string;
+  count: number;
+  last_seen?: string | null;
+}
+
+export interface LogErrors {
+  hours: number;
+  log_groups: string[];
+  total: number;
+  patterns: ErrorPattern[];
+}
+
 export interface Flow {
   id: string;
   name: string;
@@ -90,6 +110,7 @@ export interface Flow {
   sync_depth: number;
   sync_latency_ms: number | null;
   slowest: string | null;
+  top_errors?: FlowError[];
 }
 
 export interface Capacity {

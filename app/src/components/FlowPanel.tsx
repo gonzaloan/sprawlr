@@ -98,6 +98,26 @@ export function FlowPanel({ ix, flow, insights, capacity, onNode }: Props) {
         ),
       )}
 
+      {(flow.top_errors?.length ?? 0) > 0 && (
+        <section>
+          <h3>Most frequent errors</h3>
+          <ul className="errs">
+            {flow.top_errors!.map((e) => (
+              <li key={e.node + e.message}>
+                <code className="errs__msg">{e.message}</code>
+                <span className="errs__meta">
+                  <strong>{fmtCount(e.count)}</strong> in{" "}
+                  <button className="linkish" onClick={() => onNode(e.node)}>
+                    {name(e.node)}
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">From the last 24 hours of logs. Numbers, ids and values are masked.</p>
+        </section>
+      )}
+
       {related.length > 0 && (
         <section>
           <h3>In this flow</h3>

@@ -72,6 +72,29 @@ pub struct Flow {
     pub sync_latency_ms: Option<f64>,
     /// Node adding the most latency to the synchronous part.
     pub slowest: Option<NodeId>,
+    /// Most frequent error messages across the flow's resources (when logs were read).
+    #[serde(default)]
+    pub top_errors: Vec<FlowError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlowError {
+    pub node: NodeId,
+    pub message: String,
+    pub count: f64,
+    #[serde(default)]
+    pub last_seen: Option<String>,
+}
+
+fn top_errors(g: &ArchGraph, nodes: &[NodeId], keep: usize) -> Vec<FlowError> {
+    let mut all: Vec<FlowError> = nodes
+        .iter()
+        .filter_map(|id| Some((id, crate::logs::of(g.node(id)?)?)))
+        .flat_map(|(id, l)| l.patterns.into_iter().map(move |p| FlowError { node: id.clone(), message: p.message, count: p.count, last_seen: p.last_seen }))
+        .collect();
+    all.sort_by(|a, b| b.count.total_cmp(&a.count).then(a.message.cmp(&b.message)));
+    all.truncate(keep);
+    all
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,8 +190,15 @@ fn runs(n: &Node) -> Option<f64> {
     ["requests", "invocations", "started", "sent", "published"].iter().find_map(|k| total(n, k))
 }
 
+/// Errors in 24 h. The error metric is authoritative (a failed invocation, a 5xx); error lines
+/// in logs count only where no such metric exists (ECS services, EC2 instances).
 fn errors(n: &Node) -> f64 {
-    ["errors", "errors_5xx", "failed"].iter().filter_map(|k| total(n, k)).fold(0.0, |a, b| a + b)
+    let metric: Vec<f64> = ["errors", "errors_5xx", "failed"].iter().filter_map(|k| total(n, k)).collect();
+    if metric.is_empty() {
+        crate::logs::of(n).map_or(0.0, |l| l.total)
+    } else {
+        metric.iter().sum()
+    }
 }
 
 fn latency_ms(n: &Node) -> Option<f64> {
@@ -357,6 +387,7 @@ pub fn flows(g: &ArchGraph) -> Vec<Flow> {
             stages: hops.iter().map(|h| h.stage).max().unwrap_or(0) + 1,
             runs_24h,
             errors_24h,
+            top_errors: top_errors(g, &order, 5),
             sync_depth,
             sync_latency_ms: sync_latency,
             slowest,
@@ -585,18 +616,28 @@ pub fn insights(g: &ArchGraph, flows: &[Flow], capacity: &[Capacity]) -> Vec<Ins
     for (origin, names) in &error_origins {
         let n = g.node(origin).unwrap();
         let behind = if n.layer() == Layer::Edge { " (returned by what it routes to)" } else { "" };
+        let logs = crate::logs::of(n);
+        let common = logs.as_ref().and_then(|l| Some((l.patterns.first()?.clone(), l.total)));
         let downstream: BTreeSet<String> = flows.iter().flat_map(|f| f.hops.iter()).filter(|h| &h.from == origin).map(|h| name(&h.to)).collect();
         out.push(Insight {
             kind: "error_origin".into(),
             priority: Priority::High,
             title: format!("Errors start at {}", name(origin)),
             detail: format!(
-                "{:.0} errors in the last 24 hours{behind}, affecting {}{}.",
+                "{:.0} errors in the last 24 hours{behind}, affecting {}{}.{}",
                 errors(n),
                 names.iter().map(|x| format!("“{x}”")).collect::<Vec<_>>().join(" and "),
-                if downstream.is_empty() { String::new() } else { format!("; it calls {}", downstream.into_iter().collect::<Vec<_>>().join(", ")) }
+                if downstream.is_empty() { String::new() } else { format!("; it calls {}", downstream.into_iter().collect::<Vec<_>>().join(", ")) },
+                match &common {
+                    Some((p, total)) if *total > 0.0 => format!(" Most common in its logs: “{}” ({:.0} of {:.0} error lines).", p.message, p.count, total),
+                    _ => String::new(),
+                }
             ),
-            action: Some("Open its logs for the last hours and look at the most common error message.".into()),
+            action: Some(match &common {
+                Some((p, total)) if *total > 0.0 && p.count / total >= 0.5 => format!("Start with that message: it is {:.0}% of the error lines.", 100.0 * p.count / total),
+                Some(_) => "Its logs show several different errors; start with the most frequent.".into(),
+                None => "Open its logs for the last hours and look at the most common error message (scan with error logs on to see them here).".into(),
+            }),
             nodes: vec![origin.clone()],
             flow: flows.iter().find(|f| f.name == names[0]).map(|f| f.id.clone()),
         });
@@ -825,6 +866,20 @@ mod tests {
         assert!(!states.contains_key("reports-worker-role"), "a role in use is not listed");
         let savings: f64 = i.lifecycle.iter().filter_map(|l| l.monthly_cost).sum();
         assert!(savings > 30.0);
+    }
+
+    #[test]
+    fn error_messages_from_logs_reach_flows_and_the_origin() {
+        let (g, i) = demo();
+        let origin = i.insights.iter().find(|x| x.kind == "error_origin").unwrap();
+        assert!(origin.detail.contains("Timeout calling https://api.stripe.com"), "{}", origin.detail);
+        assert!(origin.action.as_deref().unwrap().contains("73%"), "{:?}", origin.action);
+        let f = i.flows.iter().find(|f| f.name == "Web requests to checkout").unwrap();
+        let top: Vec<(String, &str)> = f.top_errors.iter().map(|e| (named(&g, &e.node), e.message.as_str())).collect();
+        assert_eq!(top[0].1, "Timeout calling https://api.stripe.com/v1/invoices after <n> ms");
+        // ECS has no error metric: its error lines count toward the flow.
+        assert!(top.iter().any(|(n, m)| n == "checkout-api" && m.contains("connection pool exhausted")), "{top:?}");
+        assert!(f.errors_24h >= 26.0 + 7.0, "{}", f.errors_24h);
     }
 
     #[test]

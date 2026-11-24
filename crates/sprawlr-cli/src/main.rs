@@ -25,6 +25,10 @@ enum Cmd {
         /// Skip CloudWatch alarms/metrics and X-Ray traces
         #[arg(long)]
         no_telemetry: bool,
+        /// Also read error lines from CloudWatch Logs (Logs Insights, billed per GB scanned).
+        /// Only masked patterns are stored, never raw lines.
+        #[arg(long)]
+        logs: bool,
     },
     /// Generate Markdown documentation (README.md + apps/<app>.md) from a snapshot
     Docs {
@@ -47,8 +51,8 @@ enum Cmd {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     match Cli::parse().cmd {
-        Cmd::Scan { profile, regions, out, no_telemetry } => {
-            let opts = sprawlr_scan::ScanOptions { telemetry: !no_telemetry };
+        Cmd::Scan { profile, regions, out, no_telemetry, logs } => {
+            let opts = sprawlr_scan::ScanOptions { telemetry: !no_telemetry, logs };
             let progress: sprawlr_scan::Progress = std::sync::Arc::new(|m| eprintln!("… {m}"));
             let mut report = sprawlr_scan::scan(profile.as_deref(), &regions, &opts, progress).await?;
             summarize(&mut report.graph);

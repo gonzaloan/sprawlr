@@ -56,11 +56,11 @@ fn remember(app: &tauri::AppHandle, snap: &Snapshot) {
 
 /// Read-only scan of one account across regions, with inference, telemetry and findings.
 #[tauri::command]
-async fn scan(app: tauri::AppHandle, profile: Option<String>, regions: Vec<String>, telemetry: Option<bool>) -> Result<ScanResult, String> {
+async fn scan(app: tauri::AppHandle, profile: Option<String>, regions: Vec<String>, telemetry: Option<bool>, logs: Option<bool>) -> Result<ScanResult, String> {
     if regions.is_empty() {
         return Err("add at least one region".into());
     }
-    let opts = sprawlr_scan::ScanOptions { telemetry: telemetry.unwrap_or(true) };
+    let opts = sprawlr_scan::ScanOptions { telemetry: telemetry.unwrap_or(true), logs: logs.unwrap_or(false) };
     let mut report = sprawlr_scan::scan(profile.as_deref(), &regions, &opts, progress(&app)).await.map_err(|e| format!("{e:#}"))?;
     infer(&mut report.graph);
     let snapshot = report.graph.snapshot();
@@ -68,11 +68,13 @@ async fn scan(app: tauri::AppHandle, profile: Option<String>, regions: Vec<Strin
     Ok(ScanResult { snapshot, warnings: report.warnings })
 }
 
-/// Alarms, metrics and traces only, for the snapshot on screen.
+/// Alarms, metrics and traces only, for the snapshot on screen. Error logs are read again if
+/// the snapshot has them.
 #[tauri::command]
 async fn refresh_health(app: tauri::AppHandle, profile: Option<String>, snapshot: Snapshot) -> Result<ScanResult, String> {
+    let logs = snapshot.nodes.iter().any(|n| n.attrs.get("log_errors").is_some());
     let mut g = ArchGraph::from_snapshot(&snapshot);
-    let warnings = sprawlr_scan::refresh_telemetry(&mut g, profile.as_deref(), progress(&app)).await.map_err(|e| format!("{e:#}"))?;
+    let warnings = sprawlr_scan::refresh_telemetry(&mut g, profile.as_deref(), logs, progress(&app)).await.map_err(|e| format!("{e:#}"))?;
     let snapshot = g.snapshot();
     remember(&app, &snapshot);
     Ok(ScanResult { snapshot, warnings })

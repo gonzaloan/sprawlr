@@ -15,6 +15,7 @@ export function ScanPanel({ current, fromScan, onLoad, onDemo }: Props) {
   const [profile, setProfile] = useState("");
   const [regions, setRegions] = useState("us-east-1");
   const [telemetry, setTelemetry] = useState(true);
+  const [logs, setLogs] = useState(false);
   const [busy, setBusy] = useState<null | "scan" | "health">(null);
   const [step, setStep] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -48,7 +49,7 @@ export function ScanPanel({ current, fromScan, onLoad, onDemo }: Props) {
       const list = regions.split(/[\s,]+/).filter(Boolean);
       const r =
         kind === "scan"
-          ? await call<ScanResult>("scan", { profile: profile || null, regions: list, telemetry })
+          ? await call<ScanResult>("scan", { profile: profile || null, regions: list, telemetry, logs })
           : await call<ScanResult>("refresh_health", { profile: profile || null, snapshot: current });
       setWarnings(r.warnings);
       onLoad(r.snapshot, `${profile || "default credentials"}, ${kind === "scan" ? list.join(", ") : "health refreshed"}`, true);
@@ -91,6 +92,10 @@ export function ScanPanel({ current, fromScan, onLoad, onDemo }: Props) {
           <label className="check">
             <input type="checkbox" checked={telemetry} onChange={(e) => setTelemetry(e.target.checked)} disabled={!!busy} />
             <span>Include alarms, metrics and traces (a few cents of CloudWatch per scan)</span>
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={logs} onChange={(e) => setLogs(e.target.checked)} disabled={!!busy} />
+            <span>Read error lines from the last 24 hours of logs. Logs Insights bills per GB scanned; only masked patterns are kept, never the lines.</span>
           </label>
           <button className="btn" onClick={() => run("scan")} disabled={!!busy}>
             {busy === "scan" ? "Scanning…" : "Scan account"}

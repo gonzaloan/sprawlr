@@ -63,6 +63,16 @@ Thick arrows were seen in traffic, plain arrows are configured, dotted arrows ar
 | InvoicesTable | Read units | 14k (last 24 h) |  |
 | InvoicesTable | Write throttles | 0 (last 24 h) |  |
 
+## Errors in logs, last 24 hours
+
+Messages are reduced to patterns: numbers, ids, addresses and values are masked, and the raw lines are never stored.
+
+| Resource | Message | Times | Last seen (UTC) |
+|---|---|---|---|
+| InvoiceProcessor | `Timeout calling https://api.stripe.com/v1/invoices after <n> ms` | 19 | 2026-11-24 11:52 |
+| InvoiceProcessor | `ConditionalCheckFailedException: invoice <n> already exists` | 5 | 2026-11-24 11:49 |
+| InvoiceProcessor | `KeyError: 'customer_id'` | 2 | 2026-11-24 09:12 |
+
 ## How components communicate
 
 | From | | To | How we know |

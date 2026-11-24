@@ -42,6 +42,14 @@ impl B {
         n.attrs["alarms"] = Value::Array(list);
     }
 
+    /// Error lines as Logs Insights would return them; stored as patterns, like a real scan.
+    fn logs(&mut self, id: &str, group: &str, rows: &[(&str, f64, &str)]) {
+        let (total, patterns) = crate::logs::group(rows.iter().map(|(m, c, t)| crate::logs::Row { message: m.to_string(), count: *c, last_seen: Some(t.to_string()) }));
+        let l = crate::logs::LogErrors { hours: 24, log_groups: vec![group.to_string()], total, patterns };
+        let n = self.g.node_mut(&id.into()).unwrap();
+        n.attrs["log_errors"] = serde_json::to_value(l).unwrap();
+    }
+
     fn edge(&mut self, from: &str, to: &str, kind: EdgeKind, ev: &[(EvidenceKind, &str)]) {
         for (k, source) in ev {
             let e = Evidence { kind: *k, source: source.to_string(), detail: None, seen_at: "2026-11-24T12:00:00Z".parse().unwrap() };
@@ -277,6 +285,10 @@ pub fn demo_graph() -> ArchGraph {
         metric("cpu", "CPU", "%", "Average", daily(35.0, 15.0), None),
         metric("memory", "Memory", "%", "Average", daily(58.0, 5.0), None),
     ]);
+    b.logs(&api, "/ecs/checkout-api", &[
+        (r#"{"level":"error","msg":"pg: connection pool exhausted (max 20 connections), waited 5000 ms","order":"ord_8812"}"#, 5.0, "2026-11-24 11:58:21.000"),
+        (r#"{"level":"error","msg":"pg: connection pool exhausted (max 20 connections), waited 5001 ms","order":"ord_9921"}"#, 2.0, "2026-11-24 11:41:09.000"),
+    ]);
     b.metrics(&db, vec![
         metric("cpu", "CPU", "%", "Average", daily(62.0, 18.0), None),
         metric("connections", "Connections", "count", "Average", daily(140.0, 40.0), None),
@@ -305,6 +317,13 @@ pub fn demo_graph() -> ArchGraph {
             d[21] = Some(4100.0); d[22] = Some(6900.0); d[23] = Some(8800.0);
             d
         }, None),
+    ]);
+    b.logs(&invoices, "/aws/lambda/BillingStack-prod-InvoiceProcessor9F3A21-XK2", &[
+        ("2026-11-24T11:52:03.120Z\t0b6f2d4e-1c3a-4e5f-9a7b-2c4d6e8f0a1b\t[ERROR] Timeout calling https://api.stripe.com/v1/invoices after 30012 ms", 11.0, "2026-11-24 11:52:03.120"),
+        ("2026-11-24T11:47:41.902Z\t5e1d9c3b-7a2f-4b6e-8d0c-1f3a5b7c9d2e\t[ERROR] Timeout calling https://api.stripe.com/v1/invoices after 29870 ms", 8.0, "2026-11-24 11:47:41.902"),
+        (r#"{"level":"error","errorType":"ConditionalCheckFailedException","errorMessage":"invoice 88412 already exists","requestId":"c1d2"}"#, 3.0, "2026-11-24 11:30:10.004"),
+        (r#"{"level":"error","errorType":"ConditionalCheckFailedException","errorMessage":"invoice 88977 already exists","requestId":"e3f4"}"#, 2.0, "2026-11-24 11:49:55.310"),
+        ("2026-11-24T09:12:00.551Z\t9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d\t[ERROR] KeyError: 'customer_id'\nTraceback (most recent call last):\n  File \"/var/task/handler.py\", line 58", 2.0, "2026-11-24 09:12:00.551"),
     ]);
     b.alarm(&invoices, "invoice-processor-errors", "ALARM", "Errors", "Threshold Crossed: 3 datapoints were greater than the threshold (5.0)");
     b.metrics(&renderer, vec![

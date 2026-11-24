@@ -10,6 +10,10 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 
 - **What needs attention**, first thing on screen: where errors start, what saturates first if traffic grows, queues that can lose or duplicate messages, dependencies many flows share. Each item says why and what to do.
 - **Flows**: the paths requests and events take, found from entry points (public endpoints, schedules) and told step by step: what answers the caller, then what happens later through queues and events. Each flow shows its runs, errors, wait time and where it breaks first.
+- **Why it fails**: with error logs on, sprawlr asks CloudWatch Logs Insights for the last 24 hours of error lines of every function and container it found, and reduces them to patterns (`Timeout calling https://api.stripe.com/v1/invoices after <n> ms`, 19 times). Numbers, ids, emails, addresses, tokens and quoted values are masked, and raw lines are never stored. Each flow lists its most frequent errors, and "Errors start at X" names the message to fix first. Off by default: Logs Insights reads log content and bills per GB scanned.
+
+  ![Error patterns from a function's logs](docs/error-logs.png)
+
 - **Bottlenecks and what-if**: every resource's busiest hour against its limit (database CPU, service CPU and memory, Lambda concurrency, API throttles). Drag the traffic slider to see what saturates at 1.5× or 3× and in which order.
 - **Resources you can't see inside**: an EC2 worker's code is out of sight, but its IAM role says what it can touch. sprawlr reads every role's policies (wildcards, `NotAction`, denies), turns specific grants into dotted "allowed by IAM" connections and follows them in flows when nothing else is known. An S3 upload that notifies a queue read by an EC2 worker becomes the flow "Files uploaded to reports-uploads". Grants on a whole service (`dynamodb:*` on `*`) are reported, never drawn as lines to everything.
 
@@ -26,7 +30,7 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 - **Blast radius**: select a resource to see everything that breaks if it fails.
 - **Documentation**: one Markdown page per app (diagrams per environment, components, data flows, network, secrets, differences between environments, findings) plus an account index. Mermaid diagrams render on GitHub, GitLab and most wikis. See [examples/demo-architecture](examples/demo-architecture/README.md).
 
-Secret values and data are never read. `iam-policy.json` grants only discovery calls and explicitly denies reading secrets, objects, items and messages. Telemetry uses `GetMetricData`, which CloudWatch bills (a few cents per scan); turn it off with `--no-telemetry` or the checkbox in the app.
+Secret values and data are never read. `iam-policy.json` grants only discovery calls and explicitly denies reading secrets, objects, items and messages. Telemetry uses `GetMetricData`, which CloudWatch bills (a few cents per scan); turn it off with `--no-telemetry` or the checkbox in the app. Error logs are the one exception to "never reads data": they are off unless you pass `--logs` or tick the box, need the separate `OptionalErrorLogs` statement in the policy (delete it to forbid them), and only masked patterns leave the query.
 
 ## What it reads
 
@@ -38,6 +42,7 @@ Secret values and data are never read. `iam-policy.json` grants only discovery c
 | Cloud Control | EC2 instances, ECS services and task definitions, load balancers and target groups, RDS/Aurora, API Gateway (HTTP), SQS (with dead-letter queues), SNS, DynamoDB, S3 (with event notifications), KMS, Step Functions (definitions are walked), EventBridge rules, CloudFront origins |
 | Native APIs | REST API integrations, SNS subscriptions, secret rotation and last use, tags |
 | Telemetry | CloudWatch alarms, 24 hours of metrics, 14 days of activity counts, X-Ray service graph |
+| Logs (opt-in, `--logs`) | error lines of Lambda and ECS (`awslogs`) log groups, counted by Logs Insights and kept only as masked patterns |
 
 Each Cloud Control type is interpreted by a small pure function in `crates/sprawlr-scan/src/extract.rs`. Supporting a new service is one function and a JSON fixture test.
 

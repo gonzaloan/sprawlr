@@ -68,6 +68,17 @@
       "Resource": "*"
     },
     {
+      "Sid": "OptionalErrorLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "NeverReadSecretsOrData",
       "Effect": "Deny",
       "Action": [

@@ -185,6 +185,7 @@ fn ecs_service(ctx: &ScanContext, p: &Value, lk: &Lookup) -> Extracted {
 
     let net = p.pointer("/NetworkConfiguration/AwsvpcConfiguration").cloned().unwrap_or_default();
     let mut images = Vec::new();
+    let mut log_groups: Vec<String> = Vec::new();
     let mut env_keys = Vec::new();
     let mut plaintext = Vec::new();
     let td_arn = s(p, "TaskDefinition").unwrap_or_default();
@@ -196,6 +197,11 @@ fn ecs_service(ctx: &ScanContext, p: &Value, lk: &Lookup) -> Extracted {
         for c in arr(td, "ContainerDefinitions") {
             if let Some(img) = s(c, "Image") {
                 images.push(img.to_string());
+            }
+            if c.pointer("/LogConfiguration/LogDriver").and_then(|v| v.as_str()) == Some("awslogs") {
+                if let Some(lg) = c.pointer("/LogConfiguration/Options/awslogs-group").and_then(|v| v.as_str()) {
+                    log_groups.push(lg.to_string());
+                }
             }
             for e in arr(c, "Environment") {
                 let (Some(k), Some(v)) = (s(e, "Name"), s(e, "Value")) else { continue };
@@ -228,6 +234,7 @@ fn ecs_service(ctx: &ScanContext, p: &Value, lk: &Lookup) -> Extracted {
         "public_ip": s(&net, "AssignPublicIp") == Some("ENABLED"),
         "env_keys": env_keys,
         "env_plaintext_secret_keys": plaintext,
+        "log_groups": log_groups,
     });
     Extracted { node: Some(n), links }
 }
@@ -708,6 +715,7 @@ mod tests {
             "ContainerDefinitions": [{
                 "Image": "123.dkr.ecr.us-east-1.amazonaws.com/api:4.2",
                 "Environment": [{"Name": "ORDERS_TABLE", "Value": "orders"}, {"Name": "API_TOKEN", "Value": "abcd1234efgh"}],
+                "LogConfiguration": {"LogDriver": "awslogs", "Options": {"awslogs-group": "/ecs/orders-api", "awslogs-region": "us-east-1"}},
                 "Secrets": [{"Name": "DB_PASSWORD", "ValueFrom": "arn:aws:secretsmanager:us-east-1:123:secret:db-AbC123:password::"}]
             }]
         }));
@@ -721,6 +729,7 @@ mod tests {
         let n = e.node.unwrap();
         assert!(n.aliases.contains(&"ecs:prod/api".to_string()));
         assert_eq!(n.attrs["env_plaintext_secret_keys"][0], "API_TOKEN");
+        assert_eq!(n.attrs["log_groups"][0], "/ecs/orders-api");
         assert!(!n.attrs.to_string().contains("abcd1234efgh"), "values never stored");
         let l = ids(&e.links);
         assert!(l.iter().any(|x| x.starts_with("lb1 Some(RoutesTo)")), "{l:?}");

@@ -1,16 +1,20 @@
 [package]
 name = "sprawlr-cli"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
+description = "Command line driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "sprawlr"
 path = "src/main.rs"
 
 [dependencies]
-sprawlr-core = { path = "../sprawlr-core" }
-sprawlr-scan = { path = "../sprawlr-scan", default-features = false }
+sprawlr-domain = { path = "../sprawlr-domain" }
+sprawlr-app = { path = "../sprawlr-app", features = ["demo"] }
+sprawlr-aws = { path = "../sprawlr-aws", default-features = false }
+sprawlr-docs = { path = "../sprawlr-docs" }
+sprawlr-fs = { path = "../sprawlr-fs" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
@@ -18,4 +22,4 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
 default = ["ec2"]
-ec2 = ["sprawlr-scan/ec2"]
+ec2 = ["sprawlr-aws/ec2"]

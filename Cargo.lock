@@ -4702,40 +4702,14 @@ dependencies = [
 name = "sprawlr-app"
 version = "0.1.0"
 dependencies = [
- "serde",
- "serde_json",
- "sprawlr-core",
- "sprawlr-scan",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
-]
-
-[[package]]
-name = "sprawlr-cli"
-version = "0.1.0"
-dependencies = [
  "anyhow",
- "clap",
- "serde_json",
- "sprawlr-core",
- "sprawlr-scan",
+ "serde",
+ "sprawlr-domain",
  "tokio",
 ]
 
 [[package]]
-name = "sprawlr-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "petgraph",
- "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sprawlr-scan"
+name = "sprawlr-aws"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -4757,8 +4731,71 @@ dependencies = [
  "futures",
  "percent-encoding",
  "serde_json",
- "sprawlr-core",
+ "sprawlr-app",
+ "sprawlr-domain",
  "tokio",
+]
+
+[[package]]
+name = "sprawlr-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "sprawlr-app",
+ "sprawlr-aws",
+ "sprawlr-docs",
+ "sprawlr-domain",
+ "sprawlr-fs",
+ "tokio",
+]
+
+[[package]]
+name = "sprawlr-desktop"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sprawlr-app",
+ "sprawlr-aws",
+ "sprawlr-docs",
+ "sprawlr-domain",
+ "sprawlr-fs",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+]
+
+[[package]]
+name = "sprawlr-docs"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sprawlr-domain",
+]
+
+[[package]]
+name = "sprawlr-domain"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "petgraph",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sprawlr-fs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "sprawlr-app",
+ "sprawlr-docs",
+ "sprawlr-domain",
 ]
 
 [[package]]

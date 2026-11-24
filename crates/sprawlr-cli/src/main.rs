@@ -1,6 +1,12 @@
-use sprawlr_core::{infer::infer, ArchGraph, Layer};
+//! Command line driver: parses arguments, picks adapters, calls use cases, prints results.
+
 use clap::{Parser, Subcommand};
+use sprawlr_app::{demo::Demo, ports::Progress, scan_account, ScanOptions, ScanResult};
+use sprawlr_aws::Aws;
+use sprawlr_domain::{infer::infer, ArchGraph, Layer, Snapshot};
 use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::Arc;
 
 /// Map an AWS account's architecture (read-only).
 #[derive(Parser)]
@@ -50,46 +56,36 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let progress: Progress = Arc::new(|m| eprintln!("… {m}"));
     match Cli::parse().cmd {
         Cmd::Scan { profile, regions, out, no_telemetry, logs } => {
-            let opts = sprawlr_scan::ScanOptions { telemetry: !no_telemetry, logs };
-            let progress: sprawlr_scan::Progress = std::sync::Arc::new(|m| eprintln!("… {m}"));
-            let mut report = sprawlr_scan::scan(profile.as_deref(), &regions, &opts, progress).await?;
-            summarize(&mut report.graph);
-            for w in &report.warnings {
-                eprintln!("warn: {w}");
-            }
-            if !report.unresolved.is_empty() {
-                eprintln!("unresolved references: {}", report.unresolved.len());
-            }
-            write(&report.graph, &out)
+            let opts = ScanOptions { health: !no_telemetry, error_logs: logs };
+            let r = scan_account(&Aws::new(profile, regions), opts, None, &progress).await?;
+            report(&r);
+            write(&r.snapshot, &out)
         }
         Cmd::Docs { snapshot, out, json } => {
-            let snap: sprawlr_core::Snapshot = serde_json::from_str(&std::fs::read_to_string(&snapshot)?)?;
-            let g = ArchGraph::from_snapshot(&snap);
-            let date = snap.taken_at.format("%Y-%m-%d").to_string();
-            let files = sprawlr_core::docs::generate(&g, &snap.findings, &date);
-            for f in &files {
-                let path = std::path::Path::new(&out).join(&f.path);
-                std::fs::create_dir_all(path.parent().unwrap())?;
-                std::fs::write(&path, &f.content)?;
-            }
-            println!("{} pages written to {out}/", files.len());
+            let snap = sprawlr_fs::read_snapshot(Path::new(&snapshot))?;
+            let files = sprawlr_docs::render(&snap);
+            std::fs::create_dir_all(&out)?;
+            let n = sprawlr_fs::write_docs(Path::new(&out), &files)?;
+            println!("{n} pages written to {out}/");
             if let Some(j) = json {
                 std::fs::write(&j, serde_json::to_string(&files)?)?;
             }
             Ok(())
         }
         Cmd::Demo { out } => {
-            let mut g = sprawlr_core::demo::demo_graph();
-            summarize(&mut g);
-            write(&g, &out)
+            let r = scan_account(&Demo, ScanOptions::default(), None, &progress).await?;
+            report(&r);
+            write(&r.snapshot, &out)
         }
     }
 }
 
-fn summarize(g: &mut ArchGraph) {
-    let inf = infer(g);
+fn report(r: &ScanResult) {
+    let mut g = ArchGraph::from_snapshot(&r.snapshot);
+    let inf = infer(&mut g);
     let mut by_layer: BTreeMap<String, usize> = BTreeMap::new();
     for n in g.nodes() {
         *by_layer.entry(format!("{:?}", n.layer())).or_default() += 1;
@@ -103,10 +99,19 @@ fn summarize(g: &mut ArchGraph) {
         println!("ignored org prefixes: {:?}", inf.ignored_prefixes);
     }
     println!("shared between apps: {}  |  unassigned: {}", inf.shared.len(), inf.unassigned.len());
+    println!(
+        "flows: {}  |  findings: {}  |  to clean up: {}",
+        r.snapshot.insights.flows.len(),
+        r.snapshot.findings.len(),
+        r.snapshot.insights.lifecycle.len()
+    );
+    for w in &r.warnings {
+        eprintln!("warn: {w}");
+    }
 }
 
-fn write(g: &ArchGraph, out: &str) -> anyhow::Result<()> {
-    std::fs::write(out, serde_json::to_string_pretty(&g.snapshot())?)?;
+fn write(snapshot: &Snapshot, out: &str) -> anyhow::Result<()> {
+    std::fs::write(out, serde_json::to_string_pretty(snapshot)?)?;
     println!("snapshot written to {out}");
     Ok(())
 }

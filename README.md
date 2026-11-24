@@ -2,9 +2,9 @@
 
 A local desktop map of your AWS account. It reads your infrastructure (read-only), works out which resources belong to which app and environment, and draws how they talk to each other.
 
-![Whole account with what needs attention](docs/overview.png)
+![Whole account with what needs attention](docs/images/overview.png)
 
-![A flow under 1.5× traffic](docs/flow-whatif.png)
+![A flow under 1.5× traffic](docs/images/flow-whatif.png)
 
 ## What it shows
 
@@ -12,12 +12,12 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 - **Flows**: the paths requests and events take, found from entry points (public endpoints, schedules) and told step by step: what answers the caller, then what happens later through queues and events. Each flow shows its runs, errors, wait time and where it breaks first.
 - **Why it fails**: with error logs on, sprawlr asks CloudWatch Logs Insights for the last 24 hours of error lines of every function and container it found, and reduces them to patterns (`Timeout calling https://api.stripe.com/v1/invoices after <n> ms`, 19 times). Numbers, ids, emails, addresses, tokens and quoted values are masked, and raw lines are never stored. Each flow lists its most frequent errors, and "Errors start at X" names the message to fix first. Off by default: Logs Insights reads log content and bills per GB scanned.
 
-  ![Error patterns from a function's logs](docs/error-logs.png)
+  ![Error patterns from a function's logs](docs/images/error-logs.png)
 
 - **Bottlenecks and what-if**: every resource's busiest hour against its limit (database CPU, service CPU and memory, Lambda concurrency, API throttles). Drag the traffic slider to see what saturates at 1.5× or 3× and in which order.
 - **Resources you can't see inside**: an EC2 worker's code is out of sight, but its IAM role says what it can touch. sprawlr reads every role's policies (wildcards, `NotAction`, denies), turns specific grants into dotted "allowed by IAM" connections and follows them in flows when nothing else is known. An S3 upload that notifies a queue read by an EC2 worker becomes the flow "Files uploaded to reports-uploads". Grants on a whole service (`dynamodb:*` on `*`) are reported, never drawn as lines to everything.
 
-  ![An EC2 worker mapped from its IAM role](docs/iam-mapped.png)
+  ![An EC2 worker mapped from its IAM role](docs/images/iam-mapped.png)
 
 - **Probably not needed**: idle, orphaned and forgotten resources (NAT gateways with no traffic, unattached Elastic IPs, unused security groups, functions with no activity in 14 days, IAM roles unused for months) with the evidence and what they cost a month.
 
@@ -44,7 +44,7 @@ Secret values and data are never read. `iam-policy.json` grants only discovery c
 | Telemetry | CloudWatch alarms, 24 hours of metrics, 14 days of activity counts, X-Ray service graph |
 | Logs (opt-in, `--logs`) | error lines of Lambda and ECS (`awslogs`) log groups, counted by Logs Insights and kept only as masked patterns |
 
-Each Cloud Control type is interpreted by a small pure function in `crates/sprawlr-scan/src/extract.rs`. Supporting a new service is one function and a JSON fixture test.
+Each Cloud Control type is interpreted by a small pure function in `crates/sprawlr-aws/src/extract.rs`. Supporting a new service is one function and a JSON fixture test.
 
 ## Run it
 
@@ -65,12 +65,21 @@ cargo run -p sprawlr-cli -- docs --snapshot snapshot.json --out architecture
 
 ## Layout
 
+Hexagonal: a pure domain, use cases with ports, and adapters at the edges. See [docs/architecture.md](docs/architecture.md).
+
 | Path | What |
 |---|---|
-| `crates/sprawlr-core` | Architecture graph, app/environment inference, findings, docs generator, blast radius, demo account |
-| `crates/sprawlr-scan` | Read-only AWS discovery, relationship extractors, telemetry |
+| `crates/sprawlr-domain` | The architecture graph and every rule: inference, findings, flows, capacity, cleanup, IAM reach, error patterns. No I/O |
+| `crates/sprawlr-app` | Ports (`InfraSource`, `HealthSource`, `ErrorLogSource`, `SnapshotStore`), use cases, the demo adapter |
+| `crates/sprawlr-aws` | AWS adapter: read-only discovery, relationship extractors, telemetry, error logs |
+| `crates/sprawlr-fs` | File adapter: snapshot store, documentation writer |
+| `crates/sprawlr-docs` | Markdown and Mermaid documentation |
 | `crates/sprawlr-cli` | `sprawlr scan` / `sprawlr docs` / `sprawlr demo` |
 | `app/` | Tauri 2 + React + React Flow + ELK desktop app (also runs as a web demo) |
+
+## Contributing
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). The rules for every change, for people and coding agents alike, are in [AGENTS.md](AGENTS.md). Decisions are in [docs/adr](docs/adr/) and feature specs in [docs/specs](docs/specs/).
 
 ## License
 

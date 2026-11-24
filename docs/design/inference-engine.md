@@ -76,7 +76,7 @@ flowchart LR
   classDef s fill:#f6f8f3,stroke:#4a5a55
 ```
 
-Crates: `sprawlr-collect` (today `sprawlr-scan`), `sprawlr-graph` (today `sprawlr-core`), new `sprawlr-infer` (connections, systems, flows, lifecycle), new `sprawlr-intel` (flow intelligence, recommendations), `sprawlr-mcp`.
+Crates (as first proposed; superseded by the hexagonal layout in [ADR 0001](../adr/0001-hexagonal-architecture.md) and [architecture.md](../architecture.md)): `sprawlr-collect`, `sprawlr-graph`, `sprawlr-infer`, `sprawlr-intel`, `sprawlr-mcp`.
 
 ## 6. The evidence graph
 

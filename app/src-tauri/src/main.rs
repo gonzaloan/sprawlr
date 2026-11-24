@@ -1,17 +1,24 @@
 // Prevents an extra console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use sprawlr_core::{docs::DocFile, infer::infer, ArchGraph, Snapshot};
+//! Desktop driver: Tauri commands that call the use cases with the AWS and file adapters.
+
+use sprawlr_app::{ports::Progress, ScanOptions, ScanResult, SnapshotStore};
+use sprawlr_aws::Aws;
+use sprawlr_docs::DocFile;
+use sprawlr_domain::Snapshot;
+use sprawlr_fs::FileSnapshotStore;
 use std::collections::BTreeSet;
-use tauri::{Emitter, Manager};
 use std::path::PathBuf;
+use tauri::{Emitter, Manager};
 
 /// Profile names from ~/.aws/config and ~/.aws/credentials (honouring AWS_CONFIG_FILE /
 /// AWS_SHARED_CREDENTIALS_FILE). Only section headers are read, never keys.
 #[tauri::command]
 fn list_profiles() -> Vec<String> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
-    let path = |var: &str, file: &str| std::env::var_os(var).map(PathBuf::from).or_else(|| home.as_ref().map(|h| h.join(".aws").join(file)));
+    let path =
+        |var: &str, file: &str| std::env::var_os(var).map(PathBuf::from).or_else(|| home.as_ref().map(|h| h.join(".aws").join(file)));
 
     let mut out = BTreeSet::new();
     if let Some(p) = path("AWS_CONFIG_FILE", "config") {
@@ -35,7 +42,7 @@ fn sections(path: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
-fn progress(app: &tauri::AppHandle) -> sprawlr_scan::Progress {
+fn progress(app: &tauri::AppHandle) -> Progress {
     let app = app.clone();
     std::sync::Arc::new(move |msg: String| {
         let _ = app.emit("scan-progress", msg);
@@ -43,86 +50,49 @@ fn progress(app: &tauri::AppHandle) -> sprawlr_scan::Progress {
 }
 
 /// Where the last scan is kept so the app reopens on it.
-fn last_snapshot_path(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|d| d.join("last-snapshot.json"))
-}
-
-fn remember(app: &tauri::AppHandle, snap: &Snapshot) {
-    if let Some(p) = last_snapshot_path(app) {
-        let _ = std::fs::create_dir_all(p.parent().unwrap());
-        let _ = std::fs::write(p, serde_json::to_vec(snap).unwrap_or_default());
-    }
+fn store(app: &tauri::AppHandle) -> Result<FileSnapshotStore, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(FileSnapshotStore::new(dir.join("last-snapshot.json")))
 }
 
 /// Read-only scan of one account across regions, with inference, telemetry and findings.
 #[tauri::command]
-async fn scan(app: tauri::AppHandle, profile: Option<String>, regions: Vec<String>, telemetry: Option<bool>, logs: Option<bool>) -> Result<ScanResult, String> {
-    if regions.is_empty() {
-        return Err("add at least one region".into());
-    }
-    let opts = sprawlr_scan::ScanOptions { telemetry: telemetry.unwrap_or(true), logs: logs.unwrap_or(false) };
-    let mut report = sprawlr_scan::scan(profile.as_deref(), &regions, &opts, progress(&app)).await.map_err(|e| format!("{e:#}"))?;
-    infer(&mut report.graph);
-    let snapshot = report.graph.snapshot();
-    remember(&app, &snapshot);
-    Ok(ScanResult { snapshot, warnings: report.warnings })
+async fn scan(
+    app: tauri::AppHandle,
+    profile: Option<String>,
+    regions: Vec<String>,
+    telemetry: Option<bool>,
+    logs: Option<bool>,
+) -> Result<ScanResult, String> {
+    let opts = ScanOptions { health: telemetry.unwrap_or(true), error_logs: logs.unwrap_or(false) };
+    let store = store(&app)?;
+    sprawlr_app::scan_account(&Aws::new(profile, regions), opts, Some(&store), &progress(&app)).await.map_err(|e| format!("{e:#}"))
 }
 
 /// Alarms, metrics and traces only, for the snapshot on screen. Error logs are read again if
 /// the snapshot has them.
 #[tauri::command]
 async fn refresh_health(app: tauri::AppHandle, profile: Option<String>, snapshot: Snapshot) -> Result<ScanResult, String> {
-    let logs = snapshot.nodes.iter().any(|n| n.attrs.get("log_errors").is_some());
-    let mut g = ArchGraph::from_snapshot(&snapshot);
-    let warnings = sprawlr_scan::refresh_telemetry(&mut g, profile.as_deref(), logs, progress(&app)).await.map_err(|e| format!("{e:#}"))?;
-    let snapshot = g.snapshot();
-    remember(&app, &snapshot);
-    Ok(ScanResult { snapshot, warnings })
+    let store = store(&app)?;
+    sprawlr_app::refresh_health(&Aws::new(profile, vec![]), &snapshot, Some(&store), &progress(&app)).await.map_err(|e| format!("{e:#}"))
 }
 
 /// The last scan, if there is one.
 #[tauri::command]
 fn last_snapshot(app: tauri::AppHandle) -> Option<Snapshot> {
-    let raw = std::fs::read(last_snapshot_path(&app)?).ok()?;
-    serde_json::from_slice(&raw).ok()
-}
-
-#[derive(serde::Serialize)]
-struct ScanResult {
-    snapshot: Snapshot,
-    warnings: Vec<String>,
-}
-
-fn render(snapshot: &Snapshot) -> Vec<DocFile> {
-    let g = ArchGraph::from_snapshot(snapshot);
-    sprawlr_core::docs::generate(&g, &snapshot.findings, &snapshot.taken_at.format("%Y-%m-%d").to_string())
+    store(&app).ok()?.latest().ok().flatten()
 }
 
 /// Markdown pages for the documentation tab.
 #[tauri::command]
 fn render_docs(snapshot: Snapshot) -> Vec<DocFile> {
-    render(&snapshot)
+    sprawlr_docs::render(&snapshot)
 }
 
 /// Write README.md + apps/*.md into `dir`. Returns the number of pages written.
 #[tauri::command]
 fn save_docs(snapshot: Snapshot, dir: String) -> Result<usize, String> {
-    let root = PathBuf::from(&dir);
-    if !root.is_dir() {
-        return Err(format!("{dir} is not a folder"));
-    }
-    let files = render(&snapshot);
-    for f in &files {
-        let rel = std::path::Path::new(&f.path);
-        // Generated paths are slugs, but never trust a path that could leave the folder.
-        if rel.is_absolute() || rel.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
-            return Err(format!("refusing to write {}", f.path));
-        }
-        let path = root.join(rel);
-        std::fs::create_dir_all(path.parent().unwrap_or(&root)).map_err(|e| e.to_string())?;
-        std::fs::write(&path, &f.content).map_err(|e| format!("{}: {e}", path.display()))?;
-    }
-    Ok(files.len())
+    sprawlr_fs::write_docs(std::path::Path::new(&dir), &sprawlr_docs::render(&snapshot)).map_err(|e| format!("{e:#}"))
 }
 
 fn main() {
@@ -148,16 +118,5 @@ mod tests {
             .filter_map(|s| if s == "default" { Some(s) } else { s.strip_prefix("profile ").map(str::to_string) })
             .collect();
         assert_eq!(names, vec!["default", "prod-admin"]);
-    }
-
-    #[test]
-    fn saves_demo_docs_inside_the_folder() {
-        let mut g = sprawlr_core::demo::demo_graph();
-        infer(&mut g);
-        let dir = std::env::temp_dir().join(format!("sprawlr-docs-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let n = save_docs(g.snapshot(), dir.to_string_lossy().into()).unwrap();
-        assert_eq!(n, 5);
-        assert!(dir.join("apps/checkout.md").exists());
     }
 }

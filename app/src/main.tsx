@@ -7,7 +7,7 @@ import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
-import App from "./App";
+import App from "./app/App";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

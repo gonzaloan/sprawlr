@@ -1,0 +1,19 @@
+[package]
+name = "sprawlr-app"
+description = "Use cases and ports: what sprawlr does, independent of where data comes from"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sprawlr-domain = { path = "../sprawlr-domain" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+sprawlr-domain = { path = "../sprawlr-domain", features = ["fixtures"] }
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+# In-memory adapter serving the fictional demo account.
+demo = ["sprawlr-domain/fixtures"]

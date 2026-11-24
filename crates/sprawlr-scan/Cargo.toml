@@ -20,6 +20,7 @@ aws-sdk-resourcegroupstagging = "1"
 aws-sdk-sns = "1"
 aws-sdk-secretsmanager = "1"
 aws-sdk-apigateway = "1"
+aws-sdk-apigatewayv2 = "1"
 aws-sdk-cloudwatch = "1"
 aws-sdk-xray = "1"
 

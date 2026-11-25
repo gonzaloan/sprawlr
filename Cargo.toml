@@ -23,3 +23,10 @@ rust-version = "1.90"
 # aws-sdk-ec2 is huge; keep dependency builds lean.
 [profile.dev.package."*"]
 debug = false
+
+[profile.release]
+strip = true
+
+# Optimising the EC2 SDK hardly speeds up a scan and needs more memory than some CI runners have.
+[profile.release.package.aws-sdk-ec2]
+opt-level = 1

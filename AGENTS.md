@@ -97,6 +97,11 @@ cd app && npx tauri dev
 2. Implement it in a new adapter crate.
 3. Wire it in a driver.
 
+**Cut a release.**
+1. Bump the version in two places: `cd app && npm version 0.2.0 --no-git-tag-version` (package.json and its lock; the Tauri config reads it from there) and `version` in the workspace `Cargo.toml` (Cargo.lock follows on the next build).
+2. Merge, then tag main: `git tag v0.2.0 && git push origin v0.2.0`. The workflow stops if the tag and either version disagree.
+3. `.github/workflows/release.yml` builds every installer, checks all seven are there, adds `SHA256SUMS` and opens a draft release. Check it, then publish it.
+
 ## Code style
 
 - Rust:

@@ -54,7 +54,15 @@ Secret values and data are never read. `iam-policy.json` grants only discovery c
 
 Each Cloud Control type is interpreted by a small pure function in `crates/sprawlr-aws/src/extract.rs`. Supporting a new service is one function and a JSON fixture test.
 
-## Run it
+## Install
+
+Download the installer for macOS, Windows or Linux from [Releases](https://github.com/gonzaloan/sprawlr/releases). `SHA256SUMS` in each release lists the files' checksums.
+
+The builds are not signed with a developer certificate yet:
+- **macOS:** if macOS blocks the app, go to System Settings → Privacy & Security and choose Open Anyway.
+- **Windows:** if Windows shows "Windows protected your PC", choose More info, then Run anyway.
+
+## Build from source
 
 ```bash
 # desktop app (needs Rust, Node 20+ and the Tauri prerequisites for your OS)

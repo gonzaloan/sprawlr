@@ -15,17 +15,22 @@ mod tools;
 use source::Source;
 use std::io::{BufRead, Write};
 
+const HELP: &str = "sprawlr-mcp [--snapshot <path> | --demo]\n\
+An MCP server (stdio) answering questions about the last sprawlr scan. Read-only; never calls AWS.\n\
+Without options it reads the desktop app's last scan.";
+
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let source = match args.iter().position(|a| a == "--snapshot") {
-        _ if args.iter().any(|a| a == "--demo") => Source::demo(),
-        Some(i) => Source::file(args.get(i + 1).ok_or_else(|| anyhow::anyhow!("--snapshot needs a path"))?.into()),
-        None => Source::file(source::default_path().ok_or_else(|| anyhow::anyhow!("no home folder; pass --snapshot <path>"))?),
-    };
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("sprawlr-mcp [--snapshot <path> | --demo]\nAn MCP server (stdio) answering questions about the last sprawlr scan.");
+        println!("{HELP}");
         return Ok(());
     }
+    let source = match args.as_slice() {
+        [] => Source::file(source::default_path().ok_or_else(|| anyhow::anyhow!("no home folder; pass --snapshot <path>"))?),
+        [flag] if flag == "--demo" => Source::demo(),
+        [flag, path] if flag == "--snapshot" => Source::file(path.into()),
+        _ => anyhow::bail!("unexpected arguments: {}\n{HELP}", args.join(" ")),
+    };
     if let Source::File { path, .. } = &source {
         if !source::exists(path) {
             eprintln!("sprawlr-mcp: no scan at {} yet; tools will say so until there is one", path.display());

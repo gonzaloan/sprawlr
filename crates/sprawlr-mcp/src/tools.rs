@@ -74,7 +74,7 @@ pub fn all() -> Vec<Tool> {
         Tool {
             name: "why_failing",
             title: "Why it is failing",
-            description: "Where errors start (the resource whose errors explain the rest), the most frequent error messages in each failing resource's logs (masked: no values or personal data), firing alarms, and flows with errors.",
+            description: "Where errors start (the resource whose errors explain the rest), the most frequent error messages in each failing resource's logs (masked patterns, with when the logs were read), firing alarms, and flows with errors.",
             input: optional_app(),
         },
         Tool {
@@ -110,28 +110,38 @@ fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.get(key).and_then(Value::as_str).filter(|s| !s.trim().is_empty()).ok_or_else(|| format!("missing \"{key}\""))
 }
 
-fn to_json<T: serde::Serialize>(v: T) -> Value {
-    serde_json::to_value(v).unwrap_or(Value::Null)
+fn to_json<T: serde::Serialize>(v: T) -> Result<Value, String> {
+    match serde_json::to_value(v) {
+        Ok(v @ Value::Object(_)) => Ok(v),
+        Ok(_) => Err("internal: an answer was not an object".into()),
+        Err(e) => Err(format!("internal: {e}")),
+    }
 }
 
-/// Answer one tool call. `Err` is a message for the agent (unknown name, missing argument,
-/// nothing called that), reported as a tool error rather than a protocol error.
+/// Whether a tool exists (an unknown name is a protocol error, not a tool error).
+pub fn exists(name: &str) -> bool {
+    all().iter().any(|t| t.name == name)
+}
+
+/// Answer one tool call. `Err` is a message for the agent (missing argument, nothing called
+/// that, not an app), reported as a tool error it can recover from.
 pub fn call(name: &str, args: &Value, s: &Snapshot) -> Result<Value, String> {
     let app = args.get("app").and_then(Value::as_str);
-    Ok(match name {
+    let e = |x: queries::Lookup| x.to_string();
+    match name {
         "account_status" => to_json(queries::status(s)),
-        "list_apps" => json!({ "apps": queries::apps(s) }),
-        "list_flows" => json!({ "flows": queries::flows(s) }),
-        "explain_flow" => to_json(queries::flow(s, arg(args, "flow")?).map_err(|e| e.to_string())?),
-        "describe_resource" => to_json(queries::describe(s, arg(args, "resource")?).map_err(|e| e.to_string())?),
-        "blast_radius" => to_json(queries::blast_radius(s, arg(args, "resource")?).map_err(|e| e.to_string())?),
-        "why_failing" => to_json(queries::why_failing(s, app)),
-        "recommendations" => json!({ "recommendations": queries::recommendations(s, app) }),
+        "list_apps" => to_json(json!({ "apps": queries::apps(s) })),
+        "list_flows" => to_json(json!({ "flows": queries::flows(s) })),
+        "explain_flow" => to_json(queries::flow(s, arg(args, "flow")?).map_err(e)?),
+        "describe_resource" => to_json(queries::describe(s, arg(args, "resource")?).map_err(e)?),
+        "blast_radius" => to_json(queries::blast_radius(s, arg(args, "resource")?).map_err(e)?),
+        "why_failing" => to_json(queries::why_failing(s, app).map_err(e)?),
+        "recommendations" => to_json(json!({ "recommendations": queries::recommendations(s, app).map_err(e)? })),
         "what_to_clean" => to_json(queries::cleanup(s)),
         "find_resources" => {
             let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(10).clamp(1, 50) as usize;
-            json!({ "resources": queries::find(s, arg(args, "text")?, limit) })
+            to_json(json!({ "resources": queries::find(s, arg(args, "text")?, limit) }))
         }
-        other => return Err(format!("no tool called \"{other}\"")),
-    })
+        other => Err(format!("no tool called \"{other}\"")),
+    }
 }

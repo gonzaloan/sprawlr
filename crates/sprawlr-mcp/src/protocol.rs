@@ -22,10 +22,20 @@ fn fail(id: &Value, code: i64, message: &str) -> Value {
 }
 
 impl Server {
-    /// Answer one message. Notifications (no `id`) get no answer.
+    /// Answer one message, or a batch (an array) of them. Notifications (no `id`) get no
+    /// answer; a batch of notifications gets none either.
     pub fn handle(&mut self, msg: &Value) -> Option<Value> {
+        if let Value::Array(batch) = msg {
+            if batch.is_empty() {
+                return Some(fail(&Value::Null, -32600, "invalid request: empty batch"));
+            }
+            let replies: Vec<Value> = batch.iter().filter_map(|m| self.handle(m)).collect();
+            return (!replies.is_empty()).then_some(Value::Array(replies));
+        }
         let id = msg.get("id")?.clone();
-        let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
+        let Some(method) = msg.get("method").and_then(Value::as_str) else {
+            return Some(fail(&id, -32600, "invalid request: no method"));
+        };
         let params = msg.get("params").cloned().unwrap_or(json!({}));
         Some(match method {
             "initialize" => {
@@ -60,6 +70,9 @@ impl Server {
             ),
             "tools/call" => {
                 let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+                if !tools::exists(name) {
+                    return Some(fail(&id, -32602, &format!("unknown tool: {name:?}")));
+                }
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
                 let answer = match self.source.snapshot() {
                     Ok(s) => tools::call(name, &args, s),
@@ -152,6 +165,41 @@ mod tests {
         let mut s = server();
         assert_eq!(call(&mut s, "not json")["error"]["code"], -32700);
         assert_eq!(call(&mut s, r#"{"jsonrpc":"2.0","id":9,"method":"resources/list"}"#)["error"]["code"], -32601);
+        assert_eq!(call(&mut s, r#"{"jsonrpc":"2.0","id":10}"#)["error"]["code"], -32600, "no method");
+        assert_eq!(
+            call(&mut s, r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"drop_tables"}}"#)["error"]["code"],
+            -32602
+        );
+        assert_eq!(call(&mut s, "[]")["error"]["code"], -32600);
+    }
+
+    #[test]
+    fn batches_get_one_reply_per_request() {
+        let mut s = server();
+        let r = call(
+            &mut s,
+            r#"[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","id":2,"method":"tools/list"}]"#,
+        );
+        let ids: Vec<i64> = r.as_array().unwrap().iter().map(|m| m["id"].as_i64().unwrap()).collect();
+        assert_eq!(ids, [1, 2]);
+        assert!(s.handle_line(r#"[{"jsonrpc":"2.0","method":"notifications/initialized"}]"#).is_none());
+    }
+
+    #[test]
+    fn every_tool_answers_an_object_on_the_demo() {
+        let mut s = server();
+        let args = |name: &str| match name {
+            "explain_flow" => json!({ "flow": "checkout" }),
+            "describe_resource" | "blast_radius" => json!({ "resource": "InvoiceProcessor" }),
+            "find_resources" => json!({ "text": "queue" }),
+            _ => json!({}),
+        };
+        for t in tools::all() {
+            let msg = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": t.name, "arguments": args(t.name) } });
+            let r = s.handle(&msg).unwrap();
+            assert_eq!(r["result"]["isError"], false, "{}: {}", t.name, r["result"]["content"][0]["text"]);
+            assert!(r["result"]["structuredContent"].is_object(), "{}", t.name);
+        }
     }
 
     #[test]

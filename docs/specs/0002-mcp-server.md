@@ -54,4 +54,15 @@ Names are matched by id, name, displayed name or part of it. "checkout" resolves
 - [x] `tools/list` returns ten tools, each read-only with an object input schema.
 - [x] `account_status` on the demo reads `act_now`; `blast_radius` of checkout-orders-db includes checkout-api.
 - [x] An unknown resource or a missing argument is a tool error with a next step. A missing scan says how to make one.
-- [x] Malformed JSON gets -32700; unknown methods get -32601.
+- [x] Malformed JSON gets -32700; unknown methods get -32601; a request without a method or an empty batch gets -32600; an unknown tool gets -32602.
+- [x] A batch (2025-03-26) gets one reply per request, and none if it holds only notifications.
+- [x] An unknown app in `why_failing` or `recommendations` is a tool error listing the apps, never an empty "nothing failing".
+- [x] Every tool returns an object as `structuredContent` on the demo.
+
+## As built
+
+- Connections and flow steps carry their evidence sources (`env:ORDERS_QUEUE_URL`, `xray`, `iam:role/…`), so an agent can cite how it knows.
+- Error patterns come with when the logs were read (`read_at`): background refreshes skip logs.
+- Recommendations put flow insights and resource findings on one scale and sort by it.
+- Blast radius uses `ArchGraph::dependents` in the domain, which separates confirmed dependents from IAM-only ones.
+- Resource types without an extractor now keep only safe scalar properties (`sprawlr_aws::cloudcontrol::safe_props`), so nothing raw can reach an agent or a snapshot.

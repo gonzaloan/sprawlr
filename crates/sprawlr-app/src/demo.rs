@@ -4,6 +4,15 @@
 use crate::ports::{Discovered, ErrorLogSource, HealthSource, InfraSource, Progress, Warnings};
 use sprawlr_domain::{fixtures::demo_graph, ArchGraph};
 
+/// The demo account analysed exactly as a scan would be (IAM reach, inference, analysis),
+/// for drivers that need a snapshot without running the async use case.
+pub fn snapshot() -> sprawlr_domain::Snapshot {
+    let mut g = demo_graph();
+    sprawlr_domain::iam::apply(&mut g);
+    sprawlr_domain::infer::infer(&mut g);
+    g.snapshot()
+}
+
 /// The demo account. Its health and error logs are part of the fixture, so reading them
 /// again changes nothing.
 pub struct Demo;

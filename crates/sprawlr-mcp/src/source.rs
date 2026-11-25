@@ -1,7 +1,7 @@
 //! Where the server reads its snapshot: the desktop app's last scan, a file, or the demo.
 //! A file is read again when it changes, so a refresh in the app shows up in the next answer.
 
-use sprawlr_domain::{infer::infer, Snapshot};
+use sprawlr_domain::Snapshot;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -17,9 +17,7 @@ impl Source {
 
     /// The fictional demo account, analysed as a scan would be.
     pub fn demo() -> Self {
-        let mut g = sprawlr_domain::fixtures::demo_graph();
-        infer(&mut g);
-        Source::Fixed(Box::new(g.snapshot()))
+        Source::Fixed(Box::new(sprawlr_app::demo::snapshot()))
     }
 
     pub fn describe(&self) -> String {

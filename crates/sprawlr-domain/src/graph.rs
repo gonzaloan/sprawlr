@@ -121,6 +121,33 @@ impl ArchGraph {
         out
     }
 
+    /// What depends on `id`, split by certainty: `.0` through configured or observed
+    /// connections (it breaks), `.1` only through connections IAM allows without evidence of
+    /// use (it might).
+    pub fn dependents(&self, id: &NodeId) -> (BTreeSet<NodeId>, BTreeSet<NodeId>) {
+        let reach = |confirmed: bool| {
+            let mut out = BTreeSet::new();
+            let Some(&start) = self.index.get(id) else { return out };
+            let mut queue = VecDeque::from([start]);
+            while let Some(ix) = queue.pop_front() {
+                for e in self.g.edges_directed(ix, Direction::Incoming) {
+                    let edge = e.weight();
+                    if !edge.kind.is_runtime_dependency() || (confirmed && edge.is_permission_only()) {
+                        continue;
+                    }
+                    let dep = &self.g[e.source()];
+                    if dep.id != *id && out.insert(dep.id.clone()) {
+                        queue.push_back(e.source());
+                    }
+                }
+            }
+            out
+        };
+        let sure = reach(true);
+        let maybe = reach(false).difference(&sure).cloned().collect();
+        (sure, maybe)
+    }
+
     /// Nodes grouped by inferred app (unassigned under `None`).
     pub fn by_app(&self) -> HashMap<Option<String>, Vec<&Node>> {
         let mut m: HashMap<Option<String>, Vec<&Node>> = HashMap::new();

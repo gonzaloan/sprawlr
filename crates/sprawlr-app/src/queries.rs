@@ -7,20 +7,24 @@ use sprawlr_domain::analysis::{display_name, env_name, kind_label, verb};
 use sprawlr_domain::insights::{Flow, Priority};
 use sprawlr_domain::status::AccountStatus;
 use sprawlr_domain::{ArchGraph, EdgeKind, EvidenceKind, Health, Node, NodeId, Snapshot};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A question named something that is not in the snapshot, or more than one thing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Lookup {
     NotFound(String),
     Ambiguous(String, Vec<String>),
+    NoSuchApp(String, Vec<String>),
 }
 
 impl std::fmt::Display for Lookup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Lookup::NotFound(q) => write!(f, "nothing called \"{q}\" in this scan. Use find to search."),
+            Lookup::NotFound(q) => {
+                write!(f, "nothing called \"{q}\" in this scan. Use find_resources (or list_apps, list_flows) to see what there is.")
+            }
             Lookup::Ambiguous(q, c) => write!(f, "\"{q}\" matches several: {}. Ask again with one of them.", c.join(", ")),
+            Lookup::NoSuchApp(a, apps) => write!(f, "\"{a}\" is not an app in this scan. Apps: {}.", apps.join(", ")),
         }
     }
 }
@@ -55,8 +59,15 @@ pub fn resolve<'a>(g: &'a ArchGraph, q: &str) -> Result<&'a Node, Lookup> {
 fn flow_by<'a>(s: &'a Snapshot, q: &str) -> Result<&'a Flow, Lookup> {
     let ql = q.to_ascii_lowercase();
     let all = &s.insights.flows;
-    if let Some(f) = all.iter().find(|f| f.id == q || f.name.eq_ignore_ascii_case(q)) {
+    let label = |f: &Flow| format!("{} (id {})", f.name, f.id);
+    if let Some(f) = all.iter().find(|f| f.id == q) {
         return Ok(f);
+    }
+    let exact: Vec<&Flow> = all.iter().filter(|f| f.name.eq_ignore_ascii_case(q)).collect();
+    match exact.as_slice() {
+        [one] => return Ok(one),
+        [] => {}
+        many => return Err(Lookup::Ambiguous(q.into(), many.iter().map(|f| label(f)).collect())),
     }
     let partial: Vec<&Flow> = all.iter().filter(|f| f.name.to_ascii_lowercase().contains(&ql)).collect();
     // "checkout" most likely means production: prefer the one flow outside other environments.
@@ -67,7 +78,7 @@ fn flow_by<'a>(s: &'a Snapshot, q: &str) -> Result<&'a Flow, Lookup> {
     match partial.as_slice() {
         [one] => Ok(one),
         [] => Err(Lookup::NotFound(q.into())),
-        many => Err(Lookup::Ambiguous(q.into(), many.iter().map(|f| f.name.clone()).collect())),
+        many => Err(Lookup::Ambiguous(q.into(), many.iter().map(|f| label(f)).collect())),
     }
 }
 
@@ -89,6 +100,51 @@ fn r(n: &Node) -> Ref {
         app: n.app.as_ref().map(|a| a.value.clone()),
         env: n.env.as_ref().map(|e| env_name(&e.value)),
     }
+}
+
+/// An enum as the snapshot spells it ("act_now", "tag"), not as Rust debug-prints it.
+fn spelled<T: Serialize>(t: &T) -> String {
+    serde_json::to_value(t).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+}
+
+/// An app filter must name an app: an unknown one would read as "nothing wrong".
+fn check_app(s: &Snapshot, app: Option<&str>) -> Result<(), Lookup> {
+    let Some(a) = app else { return Ok(()) };
+    let names: BTreeSet<&str> = s.nodes.iter().filter_map(|n| n.app.as_ref().map(|x| x.value.as_str())).collect();
+    if names.iter().any(|n| n.eq_ignore_ascii_case(a)) {
+        Ok(())
+    } else {
+        Err(Lookup::NoSuchApp(a.into(), names.into_iter().map(String::from).collect()))
+    }
+}
+
+/// "Invocations: 124,800 (last 24 h)" from a stored metric summary.
+fn metric_line(m: &serde_json::Value) -> Option<String> {
+    let label = m.get("label")?.as_str()?;
+    let unit = m.get("unit").and_then(|u| u.as_str()).unwrap_or("");
+    let when = m.get("summary_label").and_then(|u| u.as_str()).unwrap_or("");
+    let value = match m.get("summary")? {
+        serde_json::Value::Number(n) => {
+            let v = n.as_f64()?;
+            match unit {
+                "%" => format!("{v:.0}%"),
+                "ms" | "s" => format!("{v:.0} {unit}"),
+                "bytes" => {
+                    let (mut x, mut i) = (v, 0);
+                    while x >= 1000.0 && i < 4 {
+                        x /= 1000.0;
+                        i += 1;
+                    }
+                    format!("{x:.1} {}", ["B", "KB", "MB", "GB", "TB"][i])
+                }
+                _ if v.fract() == 0.0 || v >= 100.0 => format!("{v:.0}"),
+                _ => format!("{v:.2}"),
+            }
+        }
+        serde_json::Value::String(s) => s.clone(),
+        _ => return None,
+    };
+    Some(if when.is_empty() { format!("{label}: {value}") } else { format!("{label}: {value} ({when})") })
 }
 
 fn evidence(kind: Option<EvidenceKind>) -> &'static str {
@@ -154,7 +210,7 @@ pub fn apps(s: &Snapshot) -> Vec<AppAnswer> {
                 a.envs.push(e);
             }
         }
-        let how = format!("{:?}", app.method).to_ascii_lowercase();
+        let how = spelled(&app.method);
         if !a.found_by.contains(&how) {
             a.found_by.push(how);
         }
@@ -174,7 +230,29 @@ pub fn apps(s: &Snapshot) -> Vec<AppAnswer> {
 pub struct Connection {
     pub verb: String,
     pub other: Ref,
+    /// The strongest evidence: "seen in traffic", "configured" or "allowed by IAM only".
     pub evidence: String,
+    /// Where each piece of evidence comes from ("env:ORDERS_QUEUE_URL", "xray", "iam:role/x").
+    pub sources: Vec<String>,
+}
+
+/// Error messages from a resource's logs, with when they were read: background refreshes
+/// skip logs, so they can be older than the scan.
+#[derive(Debug, Clone, Serialize)]
+pub struct LogAnswer {
+    pub hours: u32,
+    pub read_at: Option<String>,
+    pub total: f64,
+    pub patterns: Vec<String>,
+}
+
+fn logs_of(n: &Node) -> Option<LogAnswer> {
+    sprawlr_domain::logs::of(n).map(|l| LogAnswer {
+        hours: l.hours,
+        read_at: l.read_at.map(|t| t.to_rfc3339()),
+        total: l.total,
+        patterns: l.patterns.iter().map(|p| format!("{} × {}", p.count, p.message)).collect(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -185,7 +263,7 @@ pub struct ResourceAnswer {
     pub app_found_by: Option<String>,
     pub settings: serde_json::Value,
     pub metrics: Vec<String>,
-    pub errors_in_logs: Vec<String>,
+    pub errors_in_logs: Option<LogAnswer>,
     pub depends_on: Vec<Connection>,
     pub used_by: Vec<Connection>,
     pub findings: Vec<String>,
@@ -194,6 +272,8 @@ pub struct ResourceAnswer {
 }
 
 /// Settings worth reading; metrics, alarms, policies and log patterns have their own fields.
+/// Attributes never hold secret values or data (ADR 0003): extractors store keys and
+/// settings, and resource types without an extractor keep only safe scalars.
 fn settings(n: &Node) -> serde_json::Value {
     let mut v = n.attrs.clone();
     if let Some(o) = v.as_object_mut() {
@@ -211,6 +291,7 @@ pub fn describe(s: &Snapshot, q: &str) -> Result<ResourceAnswer, Lookup> {
         verb: verb_of(e.kind),
         other: r(other),
         evidence: evidence(e.strength()).into(),
+        sources: e.evidence.iter().map(|v| v.source.clone()).collect(),
     };
     let depends_on = g
         .edges()
@@ -222,22 +303,13 @@ pub fn describe(s: &Snapshot, q: &str) -> Result<ResourceAnswer, Lookup> {
         .filter(|(_, t, e)| t.id == n.id && e.kind != EdgeKind::NetworkReachable)
         .map(|(f, _, e)| conn(&|k| format!("{} it", verb(k)), f, e))
         .collect();
-    let metrics = n
-        .attrs
-        .get("metrics")
-        .and_then(|m| m.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|m| Some(format!("{}: {}", m.get("label")?.as_str()?, m.get("summary")?.as_str().unwrap_or(""))))
-        .collect();
-    let errors_in_logs = sprawlr_domain::logs::of(n)
-        .map(|l| l.patterns.iter().map(|p| format!("{} × {}", p.count, p.message)).collect())
-        .unwrap_or_default();
+    let metrics = n.attrs.get("metrics").and_then(|m| m.as_array()).into_iter().flatten().filter_map(metric_line).collect();
+    let errors_in_logs = logs_of(n);
     Ok(ResourceAnswer {
         resource: r(n),
         region: n.region.clone(),
-        health: format!("{:?}", n.health).to_ascii_lowercase(),
-        app_found_by: n.app.as_ref().map(|a| format!("{:?}", a.method).to_ascii_lowercase()),
+        health: spelled(&n.health),
+        app_found_by: n.app.as_ref().map(|a| spelled(&a.method)),
         settings: settings(n),
         metrics,
         errors_in_logs,
@@ -253,6 +325,7 @@ pub fn describe(s: &Snapshot, q: &str) -> Result<ResourceAnswer, Lookup> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowSummary {
+    pub id: String,
     pub name: String,
     pub app: Option<String>,
     pub env: Option<String>,
@@ -265,6 +338,7 @@ pub fn flows(s: &Snapshot) -> Vec<FlowSummary> {
         .flows
         .iter()
         .map(|f| FlowSummary {
+            id: f.id.clone(),
             name: f.name.clone(),
             app: f.app.clone(),
             env: f.env.clone(),
@@ -283,10 +357,14 @@ pub struct Step {
     /// "waits for the answer" or "in the background".
     pub mode: String,
     pub allowed_by_iam_only: bool,
+    /// How this step is known: "seen in traffic", "configured" or "allowed by IAM only".
+    pub evidence: String,
+    pub sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowAnswer {
+    pub id: String,
     pub name: String,
     pub starts: String,
     pub runs_24h: Option<f64>,
@@ -308,6 +386,11 @@ pub fn flow(s: &Snapshot, q: &str) -> Result<FlowAnswer, Lookup> {
         .map(|h| {
             let async_hop = matches!(h.mode, sprawlr_domain::insights::Mode::Async);
             let consumer = async_hop && matches!(h.kind, EdgeKind::Reads | EdgeKind::Subscribes);
+            // A consumer hop runs against the edge (the consumer reads the queue).
+            let edge = g
+                .edges()
+                .find(|(f, t, e)| e.kind == h.kind && ((f.id == h.from && t.id == h.to) || (f.id == h.to && t.id == h.from)))
+                .map(|(_, _, e)| e.clone());
             Step {
                 stage: h.stage,
                 from: name(&h.from),
@@ -315,10 +398,13 @@ pub fn flow(s: &Snapshot, q: &str) -> Result<FlowAnswer, Lookup> {
                 to: name(&h.to),
                 mode: if async_hop { "in the background".into() } else { "waits for the answer".into() },
                 allowed_by_iam_only: h.inferred,
+                evidence: evidence(edge.as_ref().and_then(|e| e.strength())).into(),
+                sources: edge.map(|e| e.evidence.into_iter().map(|v| v.source).collect()).unwrap_or_default(),
             }
         })
         .collect();
     Ok(FlowAnswer {
+        id: f.id.clone(),
         name: f.name.clone(),
         starts: match f.trigger {
             sprawlr_domain::insights::Trigger::Internet => "from the internet",
@@ -358,23 +444,7 @@ pub struct BlastAnswer {
 pub fn blast_radius(s: &Snapshot, q: &str) -> Result<BlastAnswer, Lookup> {
     let g = ArchGraph::from_snapshot(s);
     let n = resolve(&g, q)?;
-    let reach = |confirmed: bool| -> BTreeSet<NodeId> {
-        let mut seen = BTreeSet::new();
-        let mut queue = VecDeque::from([n.id.clone()]);
-        while let Some(cur) = queue.pop_front() {
-            for (f, _, e) in g.edges().filter(|(_, t, e)| t.id == cur && e.kind.is_runtime_dependency()) {
-                if confirmed && e.is_permission_only() {
-                    continue;
-                }
-                if f.id != n.id && seen.insert(f.id.clone()) {
-                    queue.push_back(f.id.clone());
-                }
-            }
-        }
-        seen
-    };
-    let sure = reach(true);
-    let maybe: BTreeSet<NodeId> = reach(false).difference(&sure).cloned().collect();
+    let (sure, maybe) = g.dependents(&n.id);
     let refs = |ids: &BTreeSet<NodeId>| {
         ids.iter().filter_map(|id| g.node(id)).filter(|x| x.layer() != sprawlr_domain::Layer::External).map(r).collect()
     };
@@ -391,9 +461,8 @@ pub fn blast_radius(s: &Snapshot, q: &str) -> Result<BlastAnswer, Lookup> {
 #[derive(Debug, Clone, Serialize)]
 pub struct Failure {
     pub resource: Ref,
-    pub errors_24h_in_logs: Option<f64>,
     pub alarm_firing: bool,
-    pub most_frequent_errors: Vec<String>,
+    pub errors_in_logs: Option<LogAnswer>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -405,26 +474,20 @@ pub struct FailureAnswer {
 }
 
 /// Where errors start and what they say, for the account or one app.
-pub fn why_failing(s: &Snapshot, app: Option<&str>) -> FailureAnswer {
+pub fn why_failing(s: &Snapshot, app: Option<&str>) -> Result<FailureAnswer, Lookup> {
+    check_app(s, app)?;
     let g = ArchGraph::from_snapshot(s);
     let in_app = |n: &Node| app.is_none_or(|a| n.app.as_ref().is_some_and(|x| x.value.eq_ignore_ascii_case(a)));
     let failing = g
         .nodes()
         .filter(|n| in_app(n))
         .filter_map(|n| {
-            let logs = sprawlr_domain::logs::of(n).filter(|l| l.total > 0.0);
+            let logs = logs_of(n).filter(|l| l.total > 0.0);
             let alarm = n.health == Health::Alarm;
             if logs.is_none() && !alarm {
                 return None;
             }
-            Some(Failure {
-                resource: r(n),
-                errors_24h_in_logs: logs.as_ref().map(|l| l.total),
-                alarm_firing: alarm,
-                most_frequent_errors: logs
-                    .map(|l| l.patterns.iter().take(5).map(|p| format!("{} × {}", p.count, p.message)).collect())
-                    .unwrap_or_default(),
-            })
+            Some(Failure { resource: r(n), alarm_firing: alarm, errors_in_logs: logs })
         })
         .collect();
     let origins = s
@@ -439,7 +502,7 @@ pub fn why_failing(s: &Snapshot, app: Option<&str>) -> FailureAnswer {
         .into_iter()
         .filter(|f| f.errors_24h > 0.0 && app.is_none_or(|a| f.app.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(a))))
         .collect();
-    FailureAnswer { origins, failing, flows_with_errors }
+    Ok(FailureAnswer { origins, failing, flows_with_errors })
 }
 
 // ------------------------------------------------------------------ findings, cleanup, find
@@ -453,37 +516,57 @@ pub struct Recommendation {
     pub resources: Vec<String>,
 }
 
-/// What needs attention, most important first: the briefing, then per-resource findings.
-pub fn recommendations(s: &Snapshot, app: Option<&str>) -> Vec<Recommendation> {
+/// What needs attention, most important first: flow-level insights and per-resource
+/// findings on one scale (act now, plan for it, good to know).
+pub fn recommendations(s: &Snapshot, app: Option<&str>) -> Result<Vec<Recommendation>, Lookup> {
+    check_app(s, app)?;
     let g = ArchGraph::from_snapshot(s);
     let in_app = |id: &NodeId| app.is_none_or(|a| g.node(id).and_then(|n| n.app.as_ref()).is_some_and(|x| x.value.eq_ignore_ascii_case(a)));
     let name = |id: &NodeId| g.node(id).map(display_name).unwrap_or_else(|| id.0.clone());
-    let prio = |p: Priority| match p {
-        Priority::High => "act now",
-        Priority::Medium => "plan for it",
-        Priority::Low => "good to know",
+    let label = |rank: u8| ["act now", "plan for it", "good to know"][rank as usize].to_string();
+    let rank_of = |p: Priority| match p {
+        Priority::High => 0u8,
+        Priority::Medium => 1,
+        Priority::Low => 2,
     };
-    let mut out: Vec<Recommendation> = s
+    let mut ranked: Vec<(u8, Recommendation)> = s
         .insights
         .insights
         .iter()
         .filter(|i| app.is_none() || i.nodes.iter().any(&in_app))
-        .map(|i| Recommendation {
-            priority: prio(i.priority).into(),
-            title: i.title.clone(),
-            detail: i.detail.clone(),
-            action: i.action.clone(),
-            resources: i.nodes.iter().map(&name).collect(),
+        .map(|i| {
+            let rank = rank_of(i.priority);
+            (
+                rank,
+                Recommendation {
+                    priority: label(rank),
+                    title: i.title.clone(),
+                    detail: i.detail.clone(),
+                    action: i.action.clone(),
+                    resources: i.nodes.iter().map(&name).collect(),
+                },
+            )
         })
         .collect();
-    out.extend(s.findings.iter().filter(|f| in_app(&f.node)).map(|f| Recommendation {
-        priority: format!("{:?}", f.severity).to_ascii_lowercase(),
-        title: format!("{}: {}", name(&f.node), f.title),
-        detail: f.detail.clone(),
-        action: None,
-        resources: vec![name(&f.node)],
+    ranked.extend(s.findings.iter().filter(|f| in_app(&f.node)).map(|f| {
+        let rank = match spelled(&f.severity).as_str() {
+            "high" => 0,
+            "medium" => 1,
+            _ => 2,
+        };
+        (
+            rank,
+            Recommendation {
+                priority: label(rank),
+                title: format!("{}: {}", name(&f.node), f.title),
+                detail: f.detail.clone(),
+                action: None,
+                resources: vec![name(&f.node)],
+            },
+        )
     }));
-    out
+    ranked.sort_by_key(|(rank, _)| *rank); // stable: briefing order within a rank
+    Ok(ranked.into_iter().map(|(_, r)| r).collect())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -510,7 +593,7 @@ pub fn cleanup(s: &Snapshot) -> CleanupAnswer {
         .filter_map(|l| {
             Some(CleanupItem {
                 resource: r(g.node(&l.node)?),
-                state: format!("{:?}", l.state).to_ascii_lowercase(),
+                state: spelled(&l.state),
                 reason: l.reason.clone(),
                 monthly_cost_usd: l.monthly_cost,
             })
@@ -576,8 +659,18 @@ mod tests {
     fn describe_says_how_it_knows() {
         let a = describe(&demo(), "InvoiceProcessor").unwrap();
         assert_eq!(a.resource.app.as_deref(), Some("billing"));
-        assert!(a.depends_on.iter().any(|c| c.other.name == "api.stripe.com" && c.evidence == "seen in traffic"), "{:?}", a.depends_on);
-        assert!(a.errors_in_logs.iter().any(|e| e.contains("Timeout calling https://api.stripe.com")));
+        assert!(
+            a.depends_on.iter().any(|c| c.other.name == "api.stripe.com" && c.evidence == "seen in traffic" && !c.sources.is_empty()),
+            "{:?}",
+            a.depends_on
+        );
+        assert!(a.errors_in_logs.as_ref().unwrap().patterns.iter().any(|e| e.contains("Timeout calling https://api.stripe.com")));
+        assert!(
+            a.metrics.iter().any(|m| m.starts_with("Invocations: ") && m.chars().any(|c| c.is_ascii_digit())),
+            "metrics carry values: {:?}",
+            a.metrics
+        );
+        assert_eq!(a.health, "alarm");
         assert!(a.settings.get("metrics").is_none(), "metrics are summarised, not dumped");
         assert!(!a.flows.is_empty());
     }
@@ -603,18 +696,22 @@ mod tests {
         assert!(b.breaks.iter().any(|x| x.name == "checkout-api"), "{:?}", b.breaks);
         assert!(b.flows.contains(&"Web requests to checkout".to_string()));
         assert!(b.breaks.iter().all(|x| x.name != "checkout-orders-db"), "not itself");
+        assert!(b.might_break.iter().any(|x| x.name == "report-generator"), "IAM-only dependents are separate: {:?}", b.might_break);
     }
 
     #[test]
     fn failures_name_the_origin_and_the_message() {
-        let a = why_failing(&demo(), None);
+        let a = why_failing(&demo(), None).unwrap();
         assert!(a.origins[0].starts_with("Errors start at InvoiceProcessor"));
         assert!(a
             .failing
             .iter()
-            .any(|f| f.resource.name == "checkout-api" && f.most_frequent_errors[0].contains("connection pool exhausted")));
-        let billing = why_failing(&demo(), Some("billing"));
+            .any(|f| f.resource.name == "checkout-api"
+                && f.errors_in_logs.as_ref().unwrap().patterns[0].contains("connection pool exhausted")));
+        let billing = why_failing(&demo(), Some("billing")).unwrap();
         assert!(billing.failing.iter().all(|f| f.resource.app.as_deref() == Some("billing")));
+        let wrong = why_failing(&demo(), Some("payments")).unwrap_err().to_string();
+        assert!(wrong.contains("not an app") && wrong.contains("checkout"), "an unknown app is an error, not \"nothing failing\": {wrong}");
     }
 
     #[test]
@@ -626,7 +723,12 @@ mod tests {
         assert_eq!(find(&s, "invoice", 5)[0].name, "InvoiceProcessor");
         let names: Vec<String> = apps(&s).into_iter().map(|a| a.name).collect();
         assert!(names.contains(&"checkout".to_string()) && names.contains(&"billing".to_string()));
-        assert_eq!(recommendations(&s, None)[0].priority, "act now");
+        let recs = recommendations(&s, None).unwrap();
+        assert_eq!(recs[0].priority, "act now");
+        let ranks: Vec<&str> = recs.iter().map(|r| r.priority.as_str()).collect();
+        let order = |p: &str| ["act now", "plan for it", "good to know"].iter().position(|x| *x == p).unwrap();
+        assert!(ranks.windows(2).all(|w| order(w[0]) <= order(w[1])), "most important first: {ranks:?}");
+        assert!(recommendations(&s, Some("nope")).is_err());
         assert_eq!(status(&s).status.level, sprawlr_domain::status::Level::ActNow);
     }
 }

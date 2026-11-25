@@ -10,7 +10,7 @@ name = "sprawlr-mcp"
 path = "src/main.rs"
 
 [dependencies]
-sprawlr-domain = { path = "../sprawlr-domain", features = ["fixtures"] }
+sprawlr-domain = { path = "../sprawlr-domain" }
 sprawlr-app = { path = "../sprawlr-app", features = ["demo"] }
 sprawlr-fs = { path = "../sprawlr-fs" }
 serde = "1"

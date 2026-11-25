@@ -11,6 +11,7 @@
 #[cfg(any(test, feature = "demo"))]
 pub mod demo;
 pub mod ports;
+pub mod queries;
 pub mod settings;
 pub mod usecases;
 

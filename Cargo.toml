@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 # Hexagonal layout (see docs/architecture.md):
-#   domain  <- app (ports + use cases) <- adapters (aws, fs, docs) <- drivers (cli, desktop)
+#   domain  <- app (ports + use cases) <- adapters (aws, fs, docs) <- drivers (cli, desktop, mcp)
 members = [
   "crates/sprawlr-domain",
   "crates/sprawlr-app",
@@ -9,6 +9,7 @@ members = [
   "crates/sprawlr-aws",
   "crates/sprawlr-fs",
   "crates/sprawlr-cli",
+  "crates/sprawlr-mcp",
   "app/src-tauri",
 ]
 

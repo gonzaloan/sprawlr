@@ -5,5 +5,6 @@ A spec comes before building anything that adds a screen, a port, a background p
 | Spec | Status |
 |---|---|
 | [0001 Account status from the menu bar or system tray](0001-tray-status.md) | Built |
+| [0002 Ask sprawlr from an agent (MCP server)](0002-mcp-server.md) | Built |
 
 Start from [template.md](template.md). Keep it short: a reader should finish it in five minutes.

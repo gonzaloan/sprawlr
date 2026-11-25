@@ -199,6 +199,46 @@ pub fn kind_for(type_name: &str) -> NodeKind {
     }
 }
 
+/// Properties of a resource type without its own extractor, kept only where they cannot hold
+/// data or secrets (ADR 0003): top-level scalars, never under names that suggest content,
+/// credentials or code, and never long text.
+pub fn safe_props(props: &serde_json::Value) -> serde_json::Value {
+    const SENSITIVE: [&str; 16] = [
+        "password",
+        "secret",
+        "token",
+        "key",
+        "credential",
+        "environment",
+        "variable",
+        "userdata",
+        "content",
+        "body",
+        "code",
+        "policy",
+        "definition",
+        "certificate",
+        "private",
+        "connectionstring",
+    ];
+    let mut out = serde_json::Map::new();
+    for (k, v) in props.as_object().into_iter().flatten() {
+        let lk = k.to_ascii_lowercase();
+        if SENSITIVE.iter().any(|s| lk.contains(s)) && !lk.ends_with("arn") && !lk.ends_with("id") {
+            continue;
+        }
+        let keep = match v {
+            serde_json::Value::String(s) => s.len() <= 200,
+            serde_json::Value::Number(_) | serde_json::Value::Bool(_) => true,
+            _ => false,
+        };
+        if keep {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    serde_json::Value::Object(out)
+}
+
 pub fn map_resource(ctx: &ScanContext, type_name: &str, ident: &str, props: Option<&str>) -> Node {
     let props: serde_json::Value = props.and_then(|p| serde_json::from_str(p).ok()).unwrap_or_default();
     let kind = kind_for(type_name);
@@ -225,7 +265,7 @@ pub fn map_resource(ctx: &ScanContext, type_name: &str, ident: &str, props: Opti
             n.aliases.push(h.to_ascii_lowercase());
         }
     }
-    n.attrs = props;
+    n.attrs = safe_props(&props);
     n
 }
 
@@ -246,6 +286,18 @@ fn short_name(ident: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unknown_types_keep_only_safe_scalars() {
+        let p = serde_json::json!({
+            "Name": "orders-search", "Arn": "arn:aws:es:us-east-1:1:domain/x", "InstanceCount": 3, "Encrypted": true,
+            "MasterUserPassword": "hunter2", "AuthToken": "t0k", "KmsKeyId": "abc", "Environment": {"A": "b"},
+            "AccessPolicies": {"Statement": []}, "UserData": "IyEvYmluL3No", "Endpoints": ["a", "b"], "Description": "x".repeat(300)
+        });
+        let kept = super::safe_props(&p);
+        let keys: Vec<&String> = kept.as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["Arn", "Encrypted", "InstanceCount", "KmsKeyId", "Name"], "{kept}");
+    }
+
     use super::*;
 
     fn ctx() -> ScanContext {

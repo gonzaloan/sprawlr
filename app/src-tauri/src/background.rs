@@ -1,14 +1,12 @@
 //! Background health refresh: off unless chosen, health only, one read at a time, slower
-//! after failures, paused after a sign-in failure. Also keeps the tray's "last read" honest
-//! by redrawing it every few minutes.
+//! after failures, paused after a sign-in failure (`sprawlr_app::Schedule`). Also keeps the
+//! tray's "last read" honest by redrawing it every few minutes.
 
 use crate::commands::{failed, set_state, succeeded};
 use crate::notify::TauriNotifier;
 use crate::state::{Desk, RefreshState};
 use crate::tray;
-use sprawlr_app::next_wait;
 use sprawlr_aws::Aws;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{sleep, sleep_until, Instant};
@@ -21,7 +19,7 @@ pub fn spawn(app: AppHandle) {
         'schedule: loop {
             let desk = app.state::<Desk>();
             let every = desk.prefs().background;
-            let wait = every.map(|e| next_wait(e, desk.failures.load(Ordering::SeqCst)));
+            let wait = desk.schedule.lock().ok().and_then(|s| s.wait(every));
             let due = wait.map(|w| Instant::now() + w);
             if let Ok(mut n) = desk.next_at.lock() {
                 *n = wait.and_then(|w| chrono::Duration::from_std(w).ok()).map(|w| chrono::Utc::now() + w);
@@ -41,10 +39,7 @@ pub fn spawn(app: AppHandle) {
                     },
                 }
             }
-
-            if !desk.paused.load(Ordering::SeqCst) {
-                run(&app).await;
-            }
+            run(&app).await;
         }
     });
 }
@@ -58,11 +53,12 @@ async fn run(app: &AppHandle) {
     let progress_app = app.clone();
     let progress: sprawlr_app::Progress = std::sync::Arc::new(move |step: String| set_state(&progress_app, RefreshState::Running { step }));
     let notifier = TauriNotifier(app.clone());
-    match sprawlr_app::refresh_in_background(&Aws::new(profile, vec![]), &desk.snapshots, &desk.settings, &notifier, &progress).await {
-        Ok(Some(done)) => succeeded(app, &done.result.snapshot),
+    let now = chrono::Utc::now();
+    match sprawlr_app::refresh_in_background(&Aws::new(profile, vec![]), &desk.snapshots, &desk.settings, &notifier, now, &progress).await {
+        Ok(Some(done)) => succeeded(app, &done.result.snapshot, done.result.warnings.len()),
         Ok(None) => set_state(app, RefreshState::Idle),
         Err(e) => {
-            failed(app, &e);
+            failed(app, &e, false);
         }
     }
 }

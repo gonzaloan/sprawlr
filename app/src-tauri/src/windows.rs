@@ -38,10 +38,12 @@ pub fn on_close_requested(window: &Window, api: &tauri::CloseRequestApi) {
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-    let mut prefs = desk.prefs();
-    if !prefs.close_hint_shown {
-        prefs.close_hint_shown = true;
-        let _ = desk.settings.save(&prefs);
+    let mut first_time = false;
+    let _ = desk.settings.update(&mut |s| {
+        first_time = !s.close_hint_shown;
+        s.close_hint_shown = true;
+    });
+    if first_time {
         let place = tray_place();
         let extra = if cfg!(target_os = "windows") { " If you can't see it, look under the ^ arrow on the taskbar." } else { "" };
         app.dialog()

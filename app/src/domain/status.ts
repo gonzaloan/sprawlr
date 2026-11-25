@@ -2,10 +2,10 @@
 // (sprawlr_domain::status); this only reads the stored status and formats time.
 import type { AccountStatus, Level, Snapshot } from "./types";
 
+import { logErrorsOf } from "./signals";
+
 /** How many items the popover lists. */
 export const TOP = 3;
-/** Same as Rust's STALE_AFTER_HOURS: an older status is not shown as current. */
-export const STALE_AFTER_HOURS = 24;
 
 export const LEVEL_LABEL: Record<Level, string> = {
   act_now: "Act now",
@@ -18,8 +18,9 @@ export function statusOf(s: Snapshot): AccountStatus | null {
   return s.status ?? null;
 }
 
-export function isStale(takenAt: string, now: Date): boolean {
-  return now.getTime() - new Date(takenAt).getTime() > STALE_AFTER_HOURS * 3600_000;
+/** Whether a status is too old to show as current; the threshold comes with the status. */
+export function isStale(takenAt: string, now: Date, status: Pick<AccountStatus, "stale_after_hours">): boolean {
+  return now.getTime() - new Date(takenAt).getTime() > status.stale_after_hours * 3600_000;
 }
 
 /** "just now", "12 min ago", "5 h ago", then the date. */
@@ -35,6 +36,12 @@ export function readAgo(takenAt: string, now: Date): string {
 /** "$37" style, as the briefing prints it. */
 export function monthlyCost(usd: number): string {
   return `$${usd.toFixed(0)}`;
+}
+
+/** The note for a snapshot whose error patterns are older than its health, if any. */
+export function logsNoteOf(s: Snapshot): string | null {
+  const reads = s.nodes.map((n) => logErrorsOf(n)?.read_at).filter((t): t is string => !!t);
+  return reads.length ? logsReadNote(reads.sort()[0], s.taken_at) : null;
 }
 
 /** Error patterns read longer ago than the health next to them say when. */

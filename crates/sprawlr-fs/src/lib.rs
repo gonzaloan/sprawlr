@@ -43,28 +43,39 @@ impl SnapshotStore for FileSnapshotStore {
 }
 
 /// `settings.json`: the desktop app's choices. A missing or unreadable file is the defaults,
-/// so a bad edit never stops the app from starting.
+/// so a bad edit never stops the app from starting. Changes go through one lock, so writers
+/// in different threads never undo each other.
 pub struct FileSettingsStore {
     path: PathBuf,
+    lock: std::sync::Mutex<()>,
 }
 
 impl FileSettingsStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        FileSettingsStore { path: path.into() }
+        FileSettingsStore { path: path.into(), lock: std::sync::Mutex::new(()) }
     }
-}
 
-impl SettingsStore for FileSettingsStore {
-    fn load(&self) -> anyhow::Result<DesktopSettings> {
+    fn read(&self) -> anyhow::Result<DesktopSettings> {
         match std::fs::read(&self.path) {
             Ok(raw) => Ok(serde_json::from_slice(&raw).unwrap_or_default()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DesktopSettings::default()),
             Err(e) => Err(e.into()),
         }
     }
+}
 
-    fn save(&self, settings: &DesktopSettings) -> anyhow::Result<()> {
-        write_atomic(&self.path, &serde_json::to_vec_pretty(settings)?)
+impl SettingsStore for FileSettingsStore {
+    fn load(&self) -> anyhow::Result<DesktopSettings> {
+        let _one_writer = self.lock.lock().map_err(|_| anyhow::anyhow!("settings lock poisoned"))?;
+        self.read()
+    }
+
+    fn update(&self, change: &mut dyn FnMut(&mut DesktopSettings)) -> anyhow::Result<DesktopSettings> {
+        let _one_writer = self.lock.lock().map_err(|_| anyhow::anyhow!("settings lock poisoned"))?;
+        let mut s = self.read()?;
+        change(&mut s);
+        write_atomic(&self.path, &serde_json::to_vec_pretty(&s)?)?;
+        Ok(s)
     }
 }
 
@@ -114,9 +125,14 @@ mod tests {
         let dir = temp("settings");
         let store = FileSettingsStore::new(dir.join("settings.json"));
         assert_eq!(store.load().unwrap(), DesktopSettings::default());
-        let s = DesktopSettings { notifications: true, background: Some(sprawlr_app::Every::Hour), ..Default::default() };
-        store.save(&s).unwrap();
+        let s = store
+            .update(&mut |s| {
+                s.notifications = true;
+                s.background = Some(sprawlr_app::Every::Hour);
+            })
+            .unwrap();
         assert_eq!(store.load().unwrap(), s);
+        assert!(s.notifications);
         std::fs::write(dir.join("settings.json"), "{ not json").unwrap();
         assert_eq!(store.load().unwrap(), DesktopSettings::default());
     }

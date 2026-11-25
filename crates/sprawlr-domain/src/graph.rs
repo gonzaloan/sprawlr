@@ -179,7 +179,11 @@ impl Snapshot {
     pub fn status_or_compute(&self) -> crate::status::AccountStatus {
         match &self.status {
             Some(s) => s.clone(),
-            None => crate::status::of(&ArchGraph::from_snapshot(self), &self.insights),
+            // Files this old may also predate insights: compute those too, never assume "all clear".
+            None => {
+                let g = ArchGraph::from_snapshot(self);
+                crate::status::of(&g, &crate::insights::analyze(&g))
+            }
         }
     }
 }

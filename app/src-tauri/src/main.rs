@@ -30,12 +30,23 @@ fn main() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             app.manage(Desk::new(dir));
-            // Some Linux desktops have no tray (no AppIndicator): run without one.
-            if let Err(e) = tray::build(app.handle()) {
-                eprintln!("sprawlr: no tray icon on this desktop: {e}");
-            }
+            // Some Linux desktops have no tray: the AppIndicator library may be missing, and
+            // its loader panics rather than failing. Run without a tray then, window shown.
+            let handle = app.handle().clone();
+            let has_tray = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tray::build(&handle))) {
+                Ok(Ok(())) => true,
+                Ok(Err(e)) => {
+                    eprintln!("sprawlr: no tray icon on this desktop: {e}");
+                    false
+                }
+                Err(_) => {
+                    eprintln!("sprawlr: no tray icon on this desktop (AppIndicator not available)");
+                    false
+                }
+            };
+            app.state::<Desk>().has_tray.store(has_tray, std::sync::atomic::Ordering::SeqCst);
             background::spawn(app.handle().clone());
-            if std::env::args().any(|a| a == IN_TRAY) {
+            if has_tray && std::env::args().any(|a| a == IN_TRAY) {
                 #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             } else if let Some(w) = app.get_webview_window(windows::MAIN) {
@@ -67,9 +78,9 @@ fn main() {
 
     app.run(|app, event| {
         // Closing windows never ends the app while it lives in the tray; "Quit sprawlr" does.
+        // `app.exit` ("Quit sprawlr") carries an exit code and is never held back.
         if let RunEvent::ExitRequested { api, code: None, .. } = event {
-            let desk = app.state::<Desk>();
-            if !desk.quitting.load(std::sync::atomic::Ordering::SeqCst) && desk.close_to_tray() {
+            if app.state::<Desk>().close_to_tray() {
                 api.prevent_exit();
             }
         }

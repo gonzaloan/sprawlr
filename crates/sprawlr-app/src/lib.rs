@@ -17,5 +17,5 @@ pub mod usecases;
 pub use ports::{
     Discovered, ErrorLogSource, HealthSource, InfraSource, Notifier, Progress, SettingsStore, SignInNeeded, SnapshotStore, Warnings,
 };
-pub use settings::{next_wait, DesktopSettings, Every};
+pub use settings::{next_wait, DesktopSettings, Every, Schedule};
 pub use usecases::{refresh_health, refresh_in_background, scan_account, Background, RefreshOptions, ScanOptions, ScanResult};

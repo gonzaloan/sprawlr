@@ -84,29 +84,34 @@ where
 
 /// One background refresh: health only (never discovery, never error logs, which bill per
 /// GB), then a notification if something needs action now that did not before and was not
-/// already notified today. Does nothing when no account was ever scanned.
+/// already notified in the last day. Does nothing when no account was ever scanned. A
+/// notification that cannot be shown is a warning: the refresh itself worked.
 pub async fn refresh_in_background<S>(
     source: &S,
     store: &dyn SnapshotStore,
     settings: &dyn SettingsStore,
     notifier: &dyn Notifier,
+    now: chrono::DateTime<chrono::Utc>,
     progress: &Progress,
 ) -> anyhow::Result<Option<Background>>
 where
     S: HealthSource + ErrorLogSource + Sync,
 {
     let Some(before) = store.latest()? else { return Ok(None) };
-    let result = refresh_health(source, &before, RefreshOptions { error_logs: false }, Some(store), progress).await?;
-    let mut prefs = settings.load()?;
+    let mut result = refresh_health(source, &before, RefreshOptions { error_logs: false }, Some(store), progress).await?;
     let mut notified = None;
-    if prefs.notifications {
+    if settings.load()?.notifications {
         if let Some(notice) = news(&before.status_or_compute(), &result.snapshot.status_or_compute()) {
-            let now = chrono::Utc::now();
-            if !prefs.fresh_keys(&notice.keys, now).is_empty() {
-                notifier.notify(&notice)?;
-                prefs.remember_notified(&notice.keys, now);
-                settings.save(&prefs)?;
-                notified = Some(notice);
+            let mut fresh = false;
+            settings.update(&mut |s| fresh = !s.fresh_keys(&notice.keys, now).is_empty())?;
+            if fresh {
+                match notifier.notify(&notice) {
+                    Ok(()) => {
+                        settings.update(&mut |s| s.remember_notified(&notice.keys, now))?;
+                        notified = Some(notice);
+                    }
+                    Err(e) => result.warnings.push(format!("notification not shown: {e:#}")),
+                }
             }
         }
     }
@@ -196,9 +201,13 @@ mod tests {
         fn load(&self) -> anyhow::Result<crate::settings::DesktopSettings> {
             Ok(self.0.lock().unwrap().clone())
         }
-        fn save(&self, s: &crate::settings::DesktopSettings) -> anyhow::Result<()> {
-            *self.0.lock().unwrap() = s.clone();
-            Ok(())
+        fn update(
+            &self,
+            change: &mut dyn FnMut(&mut crate::settings::DesktopSettings),
+        ) -> anyhow::Result<crate::settings::DesktopSettings> {
+            let mut s = self.0.lock().unwrap();
+            change(&mut s);
+            Ok(s.clone())
         }
     }
 
@@ -218,7 +227,7 @@ mod tests {
     #[tokio::test]
     async fn background_does_nothing_before_a_first_scan() {
         let (probe, store, prefs, inbox) = (Probe::default(), Memory::default(), Prefs::default(), Inbox::default());
-        assert!(refresh_in_background(&probe, &store, &prefs, &inbox, &silent()).await.unwrap().is_none());
+        assert!(refresh_in_background(&probe, &store, &prefs, &inbox, chrono::Utc::now(), &silent()).await.unwrap().is_none());
         assert_eq!(calls(&probe.health), 0, "no AWS call without a scan");
     }
 
@@ -228,18 +237,18 @@ mod tests {
         let first = scan_account(&Demo, ScanOptions { health: true, error_logs: true }, Some(&store), &silent()).await.unwrap();
         let (probe, prefs, inbox) = (Probe::default(), Prefs::default(), Inbox::default());
 
-        refresh_in_background(&probe, &store, &prefs, &inbox, &silent()).await.unwrap().unwrap();
+        refresh_in_background(&probe, &store, &prefs, &inbox, chrono::Utc::now(), &silent()).await.unwrap().unwrap();
         assert_eq!(calls(&probe.health), 1);
         assert_eq!(calls(&probe.errors), 0, "error logs are never read in the background");
         assert!(inbox.0.lock().unwrap().is_empty(), "notifications are off by default");
 
         prefs.0.lock().unwrap().notifications = true;
         store.save(&first.snapshot).unwrap();
-        let r = refresh_in_background(&probe, &store, &prefs, &inbox, &silent()).await.unwrap().unwrap();
+        let r = refresh_in_background(&probe, &store, &prefs, &inbox, chrono::Utc::now(), &silent()).await.unwrap().unwrap();
         assert_eq!(r.notified.as_ref().map(|n| n.body.as_str()), Some("Alarm firing on search-indexer"));
 
         store.save(&first.snapshot).unwrap();
-        let again = refresh_in_background(&probe, &store, &prefs, &inbox, &silent()).await.unwrap().unwrap();
+        let again = refresh_in_background(&probe, &store, &prefs, &inbox, chrono::Utc::now(), &silent()).await.unwrap().unwrap();
         assert!(again.notified.is_none(), "the same item is not notified twice in a day");
         assert_eq!(inbox.0.lock().unwrap().len(), 1);
     }

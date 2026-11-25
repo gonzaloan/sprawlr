@@ -56,27 +56,21 @@ pub trait Notifier: Send + Sync {
 /// The desktop app's choices between runs.
 pub trait SettingsStore: Send + Sync {
     fn load(&self) -> anyhow::Result<DesktopSettings>;
-    fn save(&self, settings: &DesktopSettings) -> anyhow::Result<()>;
+    /// Load, change and save as one step, so two writers never undo each other (a background
+    /// refresh recording a notification must not bring back a setting just turned off).
+    fn update(&self, change: &mut dyn FnMut(&mut DesktopSettings)) -> anyhow::Result<DesktopSettings>;
 }
 
-/// Credentials are missing or expired: the person must sign in again (for example
-/// `aws sso login`). Adapters return it inside `anyhow::Error`; drivers find it with
-/// `downcast_ref` to pause background work and say what to run.
+/// Credentials are missing, expired or rejected: the person must fix them before anything can
+/// be read. Adapters return it inside `anyhow::Error` with a hint in their own terms (for AWS,
+/// `aws sso login --profile prod-admin`); drivers find it with `downcast_ref`.
 #[derive(Debug, Clone)]
 pub struct SignInNeeded {
     pub profile: Option<String>,
+    /// What to run or check, for the person.
+    pub hint: String,
     /// The provider's own message, for the log.
     pub reason: String,
-}
-
-impl SignInNeeded {
-    /// What to run, for the person: `aws sso login --profile prod-admin`.
-    pub fn command(&self) -> String {
-        match &self.profile {
-            Some(p) => format!("aws sso login --profile {p}"),
-            None => "aws sso login".into(),
-        }
-    }
 }
 
 impl std::fmt::Display for SignInNeeded {

@@ -86,6 +86,8 @@ export interface AccountStatus {
   items: StatusItem[];
   flows_with_errors: { flow: string; name: string; errors: number }[];
   cleanup: { resources: number; monthly_cost: number };
+  /** After this many hours the status is not shown as current. */
+  stale_after_hours: number;
 }
 
 // ---- insights.rs

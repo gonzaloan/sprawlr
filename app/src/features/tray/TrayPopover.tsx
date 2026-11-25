@@ -4,8 +4,7 @@ import {
   TOP,
   fmtCount,
   isStale,
-  logErrorsOf,
-  logsReadNote,
+  logsNoteOf,
   monthlyCost,
   readAgo,
   statusOf,
@@ -15,10 +14,11 @@ import {
 } from "../../domain";
 import { useBackend, type RefreshState } from "../../platform";
 import { LevelMark } from "./LevelMark";
+import { RefreshLine } from "./RefreshLine";
 import { TraySettings } from "./TraySettings";
 
 const PRIORITY: Record<Priority, string> = { high: "Act now", medium: "Plan for it", low: "Good to know" };
-const IDLE: RefreshState = { state: "idle", next_at: null, paused: false };
+const IDLE: RefreshState = { state: "idle", next_at: null, background: false, paused: false, reads_error_logs: false, warnings: 0 };
 
 /** Every focusable control in the popover, in tab order. */
 const focusables = (root: HTMLElement) =>
@@ -105,13 +105,8 @@ export function TrayPopover() {
   };
 
   const status = snap ? statusOf(snap) : null;
-  const stale = snap ? isStale(snap.taken_at, now) : false;
-  const logsNote = useMemo(() => {
-    if (!snap) return null;
-    const reads = snap.nodes.map((n) => logErrorsOf(n)?.read_at).filter((t): t is string => !!t);
-    return reads.length ? logsReadNote(reads.sort()[0], snap.taken_at) : null;
-  }, [snap]);
-  const readsLogs = useMemo(() => !!snap?.nodes.some((n) => logErrorsOf(n)), [snap]);
+  const stale = snap && status ? isStale(snap.taken_at, now, status) : false;
+  const logsNote = useMemo(() => (snap ? logsNoteOf(snap) : null), [snap]);
 
   const running = refresh.state === "running";
   const doRefresh = () => backend.refreshStored().catch(() => {});
@@ -144,7 +139,9 @@ export function TrayPopover() {
             <p>
               {stale
                 ? `Last read ${readAgo(snap.taken_at, now)}. Refresh health to see the account now.`
-                : status.headline}
+                : status.level === "not_measured"
+                  ? "Scan with alarms, metrics and traces on to see errors and load."
+                  : status.headline}
             </p>
           </div>
         </section>
@@ -206,7 +203,7 @@ export function TrayPopover() {
         </div>
 
         <footer className="tray__foot">
-          <RefreshLine refresh={refresh} />
+          <RefreshLine refresh={refresh} readAt={snap.taken_at} />
           <div className="tray__actions">
             <button className="btn btn--quiet" onClick={doRefresh} disabled={running || !backend.can.tray}>
               {running ? "Refreshing…" : refresh.state === "idle" ? "Refresh health" : "Try again"}
@@ -218,7 +215,7 @@ export function TrayPopover() {
           <p className="muted small">
             {!backend.can.tray
               ? "Refreshing needs the desktop app."
-              : readsLogs
+              : refresh.reads_error_logs
                 ? "A few cents of CloudWatch, plus Logs Insights per GB scanned."
                 : "A few cents of CloudWatch per refresh."}
           </p>
@@ -250,32 +247,4 @@ export function TrayPopover() {
       {body}
     </div>
   );
-}
-
-/** What the last or current refresh is doing, in words. */
-function RefreshLine({ refresh }: { refresh: RefreshState }) {
-  switch (refresh.state) {
-    case "running":
-      return (
-        <p className="tray__refresh small" role="status">
-          {refresh.step}…
-        </p>
-      );
-    case "failed":
-      return (
-        <p className="tray__refresh tray__refresh--bad small" role="status">
-          Refresh failed: {refresh.message}
-          {refresh.next_at ? ` Next try at ${new Date(refresh.next_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}.` : ""}
-        </p>
-      );
-    case "sign_in_needed":
-      return (
-        <p className="tray__refresh tray__refresh--bad small" role="status">
-          Can't sign in with {refresh.profile ?? "the default credentials"}. Run <code>{refresh.command}</code>, then try again.
-          {refresh.paused ? " Background refresh is paused until a refresh works." : ""}
-        </p>
-      );
-    default:
-      return null;
-  }
 }

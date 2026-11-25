@@ -418,3 +418,12 @@ Differences from the design above, and why:
 - `Target` has a third variant, `Cleanup`, for the "Probably not needed" row.
 - `status::of` takes the graph and the insights (findings are not needed).
 - Close-to-tray off: closing the main window quits explicitly, because the hidden popover window would otherwise keep the process alive.
+- No `popoverState` or component split beyond `TrayPopover`, `TraySettings`, `RefreshLine` and `LevelMark`; `can.tray` is a boolean and the place name ("menu bar" / "system tray") comes with the settings.
+- Pause and back-off live in `sprawlr_app::Schedule` (tested), not in the driver. `refresh_in_background` takes `now` from its caller.
+- Settings are changed through `SettingsStore::update`, one locked load-change-save, so a background save never undoes a setting just changed.
+- `SignInNeeded` carries the adapter's own hint (`aws sso login --profile …`, `aws configure …`, or "AWS does not recognise the access keys"). The AWS adapter finds credential failures by type in the error chain and by STS error code, so an SSO endpoint outage does not pause background refresh.
+- Health is only read when the profile signs in to the account the scan describes; otherwise the refresh fails and says which profile to use. The last profile is saved only after a read with it works.
+- Without a tray (no AppIndicator on Linux; its loader panics, so startup catches that), sprawlr shows its window, ignores `--tray` and never hides to the tray.
+- "Partly read" shows as "N parts could not be read" under the status when the last read had warnings.
+- Positioner 2.4 returns an error rather than panicking when the tray position is unknown; the driver still uses its own "tray seen" flag.
+- The desktop notification plugin reports permission as granted, so the "turned off in system settings" message only appears where the OS really refuses.

@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-24T23:40:29.952701919Z",
+  "taken_at": "2026-11-24T23:59:08.157277904Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -2959,7 +2959,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:PutObject",
-          "seen_at": "2026-11-24T23:40:29.950660128Z"
+          "seen_at": "2026-11-24T23:59:08.154885402Z"
         }
       ]
     },
@@ -2972,7 +2972,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:GetObject",
-          "seen_at": "2026-11-24T23:40:29.950672613Z"
+          "seen_at": "2026-11-24T23:59:08.154898895Z"
         }
       ]
     },
@@ -2985,7 +2985,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: sqs:ReceiveMessage",
-          "seen_at": "2026-11-24T23:40:29.950674769Z"
+          "seen_at": "2026-11-24T23:59:08.154901004Z"
         }
       ]
     },
@@ -4188,6 +4188,7 @@
     "cleanup": {
       "resources": 5,
       "monthly_cost": 36.5
-    }
+    },
+    "stale_after_hours": 24
   }
 }

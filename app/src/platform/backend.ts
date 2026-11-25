@@ -16,12 +16,18 @@ export type RefreshState = (
   | { state: "idle" }
   | { state: "running"; step: string }
   | { state: "failed"; message: string }
-  | { state: "sign_in_needed"; profile: string | null; command: string }
+  | { state: "sign_in_needed"; profile: string | null; hint: string }
 ) & {
   /** When the next background refresh is due (ISO time), if one is scheduled. */
   next_at: string | null;
-  /** Background refresh waits for a refresh that works after a sign-in failure. */
+  /** Background refresh is on. */
+  background: boolean;
+  /** Background refresh waits for a read that works, after a sign-in failure. */
   paused: boolean;
+  /** A refresh of the stored scan reads error logs again (Logs Insights, billed per GB). */
+  reads_error_logs: boolean;
+  /** Parts of the last read that could not be read. */
+  warnings: number;
 };
 
 export type Every = "15m" | "1h" | "4h";

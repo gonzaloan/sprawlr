@@ -1,4 +1,4 @@
-import { displayName, fmtCount, fmtX, type Index } from "../../domain";
+import { displayName, fmtCount, fmtX, monthlyCost, type Index } from "../../domain";
 import type { Insights, Priority } from "../../domain";
 
 interface Props {
@@ -63,7 +63,7 @@ export function Briefing({ ix, ins, onNode, onFlow, onCleanup, onWhatIf }: Props
         <button className="brief-card" onClick={onCleanup}>
           <span className="brief-card__eyebrow">Probably not needed</span>
           <strong>
-            {ins.lifecycle.length} resources{waste > 0 ? `, about $${waste.toFixed(0)} a month` : ""}
+            {ins.lifecycle.length} resources{waste > 0 ? `, about ${monthlyCost(waste)} a month` : ""}
           </strong>
           <span className="muted">Idle, orphaned or left behind. Review the evidence before removing anything.</span>
         </button>

@@ -38,7 +38,7 @@ Arrows point inwards. Each crate may depend only on what is listed:
 | Crate | Layer | May depend on | Never |
 |---|---|---|---|
 | `sprawlr-domain` | domain | `serde`, `petgraph`, `chrono`, `regex` | I/O, async, AWS SDKs, any other sprawlr crate |
-| `sprawlr-app` | application | `sprawlr-domain`, `anyhow` | AWS SDKs, file system, Tauri |
+| `sprawlr-app` | application | `sprawlr-domain`, `anyhow`, `serde`, `chrono` | AWS SDKs, file system, Tauri, reading the clock (callers pass `now`) |
 | `sprawlr-docs` | adapter (presentation) | `sprawlr-domain` | I/O |
 | `sprawlr-aws` | adapter (driven) | `sprawlr-app`, `sprawlr-domain`, AWS SDKs | `sprawlr-fs`, drivers |
 | `sprawlr-fs` | adapter (driven) | `sprawlr-app`, `sprawlr-docs`, `sprawlr-domain` | AWS SDKs |

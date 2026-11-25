@@ -27,8 +27,10 @@ describe("status", () => {
 
   it("stops calling a day-old status current", () => {
     const t = "2026-11-24T12:00:00Z";
-    expect(isStale(t, at(t, 23 * 60))).toBe(false);
-    expect(isStale(t, at(t, 25 * 60))).toBe(true);
+    const s = statusOf(snap)!;
+    expect(s.stale_after_hours).toBe(24);
+    expect(isStale(t, at(t, 23 * 60), s)).toBe(false);
+    expect(isStale(t, at(t, 25 * 60), s)).toBe(true);
   });
 
   it("dates error messages older than the health next to them", () => {

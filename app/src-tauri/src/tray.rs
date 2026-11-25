@@ -4,7 +4,6 @@
 
 use crate::state::{Desk, MenuHandles, RefreshState};
 use crate::{commands, popover, windows};
-use sprawlr_app::SnapshotStore;
 use sprawlr_domain::status::{is_stale, Level};
 use std::sync::atomic::Ordering;
 use tauri::image::Image;
@@ -62,10 +61,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             "show" => popover::show(app),
             "open" => windows::open_main(app, None),
             "refresh" => commands::spawn_refresh(app.clone()),
-            "quit" => {
-                app.state::<Desk>().quitting.store(true, Ordering::SeqCst);
-                app.exit(0);
-            }
+            "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -89,21 +85,19 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Redraw icon, tooltip and menu from the stored snapshot and the refresh state.
+/// Redraw icon, tooltip and menu from the current status and the refresh state. Reads no
+/// file: the status is kept in `Desk` when a read succeeds.
 pub fn update(app: &AppHandle) {
     let desk = app.state::<Desk>();
     let now = chrono::Utc::now();
-    let snapshot = desk.snapshots.latest().ok().flatten();
-    let (level, line) = match &snapshot {
-        None => (None, "No status yet. Scan an account in sprawlr".to_string()),
-        Some(s) => {
-            let st = s.status_or_compute();
-            if is_stale(s.taken_at, now) {
-                (None, format!("No status: last read {}", ago(s.taken_at, now)))
-            } else {
-                (Some(st.level), st.line())
-            }
+    let current = desk.current();
+    let (level, line, sentence) = match (&current.status, current.taken_at) {
+        (Some(_), Some(at)) if is_stale(at, now) => {
+            let l = format!("No status: last read {}", ago(at, now));
+            (None, l.clone(), l)
         }
+        (Some(st), _) => (Some(st.level), st.line(), st.sentence()),
+        _ => (None, "No status yet. Scan an account in sprawlr".to_string(), "No status yet. Open sprawlr to scan an account".to_string()),
     };
     let state = desk.refresh.lock().map(|s| s.clone()).unwrap_or(RefreshState::Idle);
     let running = matches!(state, RefreshState::Running { .. });
@@ -117,15 +111,15 @@ pub fn update(app: &AppHandle) {
     if let Some(tray) = app.tray_by_id(TRAY) {
         let _ = tray.set_icon(Some(icon(level)));
         let _ = tray.set_icon_as_template(cfg!(target_os = "macos"));
-        let _ = tray.set_tooltip(Some(format!("sprawlr: {line}{suffix}")));
+        let _ = tray.set_tooltip(Some(format!("sprawlr: {sentence}{suffix}")));
     }
-    if let Ok(menu) = desk.menu.lock() {
-        if let Some(m) = menu.as_ref() {
-            let _ = m.status.set_text(format!("{line}{suffix}"));
-            let _ = m.refresh.set_text(if running { "Refreshing…" } else { "Refresh health" });
-            let _ = m.refresh.set_enabled(!running && snapshot.is_some());
-        }
-    };
+    // Clone the handles and let go of the lock: menu calls wait for the main thread.
+    let menu = desk.menu.lock().ok().and_then(|m| m.clone());
+    if let Some(m) = menu {
+        let _ = m.status.set_text(format!("{line}{suffix}"));
+        let _ = m.refresh.set_text(if running { "Refreshing…" } else { "Refresh health" });
+        let _ = m.refresh.set_enabled(!running && current.status.is_some());
+    }
 }
 
 #[cfg(test)]

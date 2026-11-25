@@ -83,6 +83,14 @@ pub struct AccountStatus {
     pub items: Vec<StatusItem>,
     pub flows_with_errors: Vec<FlowErrors>,
     pub cleanup: Cleanup,
+    /// After this many hours a status is no longer shown as current ([`is_stale`]); carried
+    /// so the UI applies the same rule without its own copy.
+    #[serde(default = "stale_after")]
+    pub stale_after_hours: i64,
+}
+
+fn stale_after() -> i64 {
+    STALE_AFTER_HOURS
 }
 
 impl AccountStatus {
@@ -90,9 +98,14 @@ impl AccountStatus {
         &self.items[..self.items.len().min(TOP)]
     }
 
-    /// One line for a tooltip or a menu: "Act now: 2 to act on now, 3 to plan for".
+    /// One line for a menu: "Act now: 2 to act on now, 3 to plan for".
     pub fn line(&self) -> String {
         format!("{}: {}", self.level.label(), self.headline)
+    }
+
+    /// One sentence for a tooltip: "Act now. 2 to act on now, 3 to plan for".
+    pub fn sentence(&self) -> String {
+        format!("{}. {}", self.level.label(), self.headline)
     }
 }
 
@@ -113,18 +126,17 @@ fn key(kind: &str, first: Option<&NodeId>) -> String {
 
 /// The status of a graph, with its findings and insights already computed.
 pub fn of(g: &ArchGraph, insights: &Insights) -> AccountStatus {
+    // Every insight names a flow or a resource; one that named neither would open nothing.
     let mut items: Vec<StatusItem> = insights
         .insights
         .iter()
-        .map(|x| StatusItem {
-            key: key(&x.kind, x.nodes.first()),
-            priority: x.priority,
-            title: x.title.clone(),
-            open: match (&x.flow, x.nodes.first()) {
+        .filter_map(|x| {
+            let open = match (&x.flow, x.nodes.first()) {
                 (Some(f), _) => Target::Flow(f.clone()),
                 (None, Some(n)) => Target::Node(n.clone()),
-                (None, None) => Target::Node(NodeId(String::new())),
-            },
+                (None, None) => return None,
+            };
+            Some(StatusItem { key: key(&x.kind, x.nodes.first()), priority: x.priority, title: x.title.clone(), open })
         })
         .collect();
 
@@ -175,6 +187,7 @@ pub fn of(g: &ArchGraph, insights: &Insights) -> AccountStatus {
             resources: insights.lifecycle.len(),
             monthly_cost: insights.lifecycle.iter().filter_map(|l| l.monthly_cost).sum(),
         },
+        stale_after_hours: STALE_AFTER_HOURS,
     }
 }
 
@@ -293,11 +306,17 @@ mod tests {
     }
 
     #[test]
-    fn old_snapshots_without_status_still_load() {
-        let mut v = serde_json::to_value(demo()).unwrap();
+    fn old_snapshots_without_status_still_load_and_get_the_same_status() {
+        let fresh = demo();
+        let mut v = serde_json::to_value(&fresh).unwrap();
         v.as_object_mut().unwrap().remove("status");
-        let s: crate::Snapshot = serde_json::from_value(v).unwrap();
-        assert!(s.status.is_none());
+        let old: crate::Snapshot = serde_json::from_value(v.clone()).unwrap();
+        assert!(old.status.is_none());
+        assert_eq!(old.status_or_compute(), fresh.status.clone().unwrap());
+        // Older still: no insights either. Never "all clear" by omission.
+        v.as_object_mut().unwrap().remove("insights");
+        let older: crate::Snapshot = serde_json::from_value(v).unwrap();
+        assert_eq!(older.status_or_compute().level, Level::ActNow);
     }
 
     #[test]

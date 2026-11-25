@@ -49,7 +49,7 @@ export function TraySettings({ onBack }: { onBack: () => void }) {
       </header>
 
       {!s ? (
-        <p className="muted small tray__pad">{error ?? "Settings are available in the desktop app."}</p>
+        <p className="muted small tray__pad">{error ?? (backend.can.tray ? "Loading settings…" : "Settings are available in the desktop app.")}</p>
       ) : (
         <div className="tray__pad">
           <fieldset className="tray__group">

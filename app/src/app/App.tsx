@@ -221,20 +221,26 @@ export default function App() {
   const showMap = tab === "map" && place.kind !== "cleanup";
   const panel: "details" | "flow" | "briefing" | null =
     tab !== "map" || place.kind === "cleanup" ? null : selected && ix.byId.has(selected) ? "details" : flow ? "flow" : place.kind === "overview" ? "briefing" : null;
+  // An item opened from the popover, waiting for the stored scan to be on screen.
+  const [pending, setPending] = useState<Target | null>(null);
   live.current.openTarget = async (t: Target) => {
     if (!live.current.fromScan) {
       const s = await backend.lastSnapshot().catch(() => null);
       if (!s) return;
       load(s, `Last scan, ${new Date(s.taken_at).toLocaleString()}`, true);
-      // Navigate once the stored scan is on screen (its index is built on the next render).
-      setTimeout(() => live.current.openTarget(t), 50);
-      return;
     }
-    setTab("map");
-    if (t.type === "flow") go({ kind: "flow", id: t.id });
-    else if (t.type === "cleanup") go({ kind: "cleanup" });
-    else showNode(t.id);
+    setPending(t);
   };
+  useEffect(() => {
+    if (!pending || !fromScan) return;
+    setPending(null);
+    setTab("map");
+    if (pending.type === "flow") go({ kind: "flow", id: pending.id });
+    else if (pending.type === "cleanup") go({ kind: "cleanup" });
+    else showNode(pending.id);
+    // Runs once the stored scan (and its index) is on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, fromScan, ix]);
 
   const showNode = (id: string) => {
     setTab("map");

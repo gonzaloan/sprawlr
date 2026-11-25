@@ -7,7 +7,7 @@ import type { Backend, RefreshState } from "./backend";
 
 const desktopOnly = (what: string) => () => Promise.reject(new Error(`${what} needs the desktop app.`));
 const never = async () => () => {};
-const IDLE: RefreshState = { state: "idle", next_at: null, paused: false };
+const IDLE: RefreshState = { state: "idle", next_at: null, background: false, paused: false, reads_error_logs: false, warnings: 0 };
 
 export function webBackend(demo: Snapshot): Backend {
   return {

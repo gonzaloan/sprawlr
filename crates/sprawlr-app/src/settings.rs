@@ -74,6 +74,37 @@ pub fn next_wait(every: Every, failures: u32) -> Duration {
     Duration::from_secs(wait.min(86_400))
 }
 
+/// When background refresh runs next. Failures slow it down; a sign-in failure stops it until
+/// a read works again (a scan, or a refresh the person asked for), because retrying with the
+/// same expired credentials only fails again.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Schedule {
+    pub failures: u32,
+    pub paused: bool,
+}
+
+impl Schedule {
+    pub fn succeeded(&mut self) {
+        *self = Schedule::default();
+    }
+
+    pub fn failed(&mut self, sign_in: bool) {
+        if sign_in {
+            self.paused = true;
+        } else {
+            self.failures = self.failures.saturating_add(1);
+        }
+    }
+
+    /// The wait before the next run, or `None` when background refresh is off or paused.
+    pub fn wait(&self, every: Option<Every>) -> Option<Duration> {
+        if self.paused {
+            return None;
+        }
+        every.map(|e| next_wait(e, self.failures))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +126,22 @@ mod tests {
         assert_eq!(next_wait(Every::FourHours, 3).as_secs(), 86_400);
         assert_eq!(next_wait(Every::FifteenMinutes, 40).as_secs(), 86_400);
         assert_eq!(Every::FifteenMinutes.per_day(), 96);
+    }
+
+    #[test]
+    fn a_sign_in_failure_pauses_until_a_read_works() {
+        let mut s = Schedule::default();
+        assert_eq!(s.wait(None), None, "off means off");
+        assert_eq!(s.wait(Some(Every::Hour)), Some(Duration::from_secs(3600)));
+        s.failed(false);
+        assert_eq!(s.wait(Some(Every::Hour)), Some(Duration::from_secs(7200)), "slower after a failure");
+        s.failed(true);
+        assert_eq!(s.wait(Some(Every::Hour)), None, "paused after a sign-in failure");
+        s.failed(false);
+        assert_eq!(s.wait(Some(Every::FifteenMinutes)), None, "still paused");
+        s.succeeded();
+        assert_eq!(s, Schedule::default());
+        assert_eq!(s.wait(Some(Every::Hour)), Some(Duration::from_secs(3600)));
     }
 
     #[test]

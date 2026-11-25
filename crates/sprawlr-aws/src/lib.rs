@@ -58,6 +58,7 @@ impl InfraSource for Aws {
 impl HealthSource for Aws {
     async fn read_health(&self, graph: &mut ArchGraph, progress: &Progress) -> anyhow::Result<Warnings> {
         let (base, account) = session(self.profile.as_deref()).await?;
+        ensure_same_account(graph, &account, self.profile.as_deref())?;
         let mut warnings = Vec::new();
         for region in Self::regions_of(graph) {
             let ctx = context(&base, &account, &region);
@@ -70,6 +71,7 @@ impl HealthSource for Aws {
 impl ErrorLogSource for Aws {
     async fn read_errors(&self, graph: &mut ArchGraph, progress: &Progress) -> anyhow::Result<Warnings> {
         let (base, account) = session(self.profile.as_deref()).await?;
+        ensure_same_account(graph, &account, self.profile.as_deref())?;
         let mut warnings = Vec::new();
         for region in Self::regions_of(graph) {
             let ctx = context(&base, &account, &region);
@@ -171,8 +173,62 @@ async fn session(profile: Option<&str>) -> anyhow::Result<(aws_config::SdkConfig
         loader = loader.profile_name(p);
     }
     let base = loader.load().await;
-    let ident = aws_sdk_sts::Client::new(&base).get_caller_identity().send().await?;
+    let ident = aws_sdk_sts::Client::new(&base).get_caller_identity().send().await.map_err(|e| {
+        use aws_sdk_sts::error::ProvideErrorMetadata;
+        let detail = aws_sdk_sts::error::DisplayErrorContext(&e).to_string();
+        let code = e.as_service_error().and_then(|s| s.code()).map(String::from);
+        match sign_in_hint(credentials_failed(&e), code.as_deref(), &detail, profile) {
+            Some(hint) => anyhow::Error::new(sprawlr_app::SignInNeeded { profile: profile.map(String::from), hint, reason: detail }),
+            None => anyhow::Error::new(e),
+        }
+    })?;
     Ok((base, ident.account().unwrap_or("unknown").to_string()))
+}
+
+/// Whether the credential provider itself failed (as opposed to the network or AWS), found by
+/// type in the error chain. A provider timeout is a network problem, not a sign-in one.
+fn credentials_failed(e: &(dyn std::error::Error + 'static)) -> bool {
+    use aws_credential_types::provider::error::CredentialsError;
+    let mut cur = Some(e);
+    while let Some(err) = cur {
+        if let Some(c) = err.downcast_ref::<CredentialsError>() {
+            return !matches!(c, CredentialsError::ProviderTimedOut(_));
+        }
+        cur = err.source();
+    }
+    false
+}
+
+/// What a person must do when credentials are the problem, or `None` when they are not.
+fn sign_in_hint(credentials_failed: bool, code: Option<&str>, detail: &str, profile: Option<&str>) -> Option<String> {
+    let flag = profile.map(|p| format!(" --profile {p}")).unwrap_or_default();
+    let who = profile.map(|p| format!("profile {p}")).unwrap_or_else(|| "the default credentials".into());
+    let sso = detail.to_ascii_lowercase().contains("sso");
+    match code {
+        Some("ExpiredToken" | "ExpiredTokenException") if sso => Some(format!("Run `aws sso login{flag}`, then try again.")),
+        Some("ExpiredToken" | "ExpiredTokenException") => {
+            Some(format!("The session token of {who} has expired. Get new credentials, then try again."))
+        }
+        Some("InvalidClientTokenId" | "UnrecognizedClientException" | "SignatureDoesNotMatch" | "InvalidAccessKeyId") => {
+            Some(format!("AWS does not recognise the access keys of {who}. Check them with `aws configure{flag}`."))
+        }
+        _ if credentials_failed && sso => Some(format!("Run `aws sso login{flag}`, then try again.")),
+        _ if credentials_failed => Some(format!("No usable credentials for {who}. Set them up with `aws configure{flag}` or sign in.")),
+        _ => None,
+    }
+}
+
+/// Health for a snapshot must come from the account it describes: same resource names in
+/// another account would paint the wrong health on it.
+fn ensure_same_account(graph: &ArchGraph, account: &str, profile: Option<&str>) -> anyhow::Result<()> {
+    if let Some(scanned) = graph.nodes().find_map(|n| n.account.clone()) {
+        let who = profile.map(|p| format!("profile {p}")).unwrap_or_else(|| "the default credentials".into());
+        anyhow::ensure!(
+            scanned == account,
+            "this scan is of account {scanned}, but {who} signs in to account {account}. Refresh with the profile for {scanned}."
+        );
+    }
+    Ok(())
 }
 
 fn context(base: &aws_config::SdkConfig, account: &str, region: &str) -> ScanContext {
@@ -255,4 +311,56 @@ async fn scan_network(ctx: &ScanContext) -> anyhow::Result<ScanOutput> {
 #[cfg(not(feature = "ec2"))]
 async fn scan_network(_: &ScanContext) -> anyhow::Result<ScanOutput> {
     anyhow::bail!("built without the `ec2` feature")
+}
+
+#[cfg(test)]
+mod sign_in_tests {
+    use super::*;
+
+    #[test]
+    fn credentials_problems_get_a_hint_and_outages_do_not() {
+        let p = Some("prod-admin");
+        assert_eq!(
+            sign_in_hint(true, None, "the SSO session has expired", p).unwrap(),
+            "Run `aws sso login --profile prod-admin`, then try again."
+        );
+        assert!(sign_in_hint(true, None, "no credentials in the property bag", p).unwrap().contains("aws configure --profile prod-admin"));
+        assert!(sign_in_hint(false, Some("ExpiredToken"), "The security token included in the request is expired", None)
+            .unwrap()
+            .contains("expired"));
+        assert!(sign_in_hint(false, Some("InvalidClientTokenId"), "", p).unwrap().contains("does not recognise the access keys"));
+        // A network failure on the way to the SSO endpoint is not a sign-in problem.
+        assert_eq!(sign_in_hint(false, None, "dispatch failure: io error reaching portal.sso.us-east-1.amazonaws.com", p), None);
+        assert_eq!(sign_in_hint(false, Some("AccessDenied"), "not authorized to perform sts:GetCallerIdentity", p), None);
+    }
+
+    #[test]
+    fn credential_errors_are_found_by_type_in_the_chain() {
+        use aws_credential_types::provider::error::CredentialsError;
+        #[derive(Debug)]
+        struct Wrapper(CredentialsError);
+        impl std::fmt::Display for Wrapper {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "dispatch failure")
+            }
+        }
+        impl std::error::Error for Wrapper {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        assert!(credentials_failed(&Wrapper(CredentialsError::not_loaded("no profile"))));
+        assert!(!credentials_failed(&Wrapper(CredentialsError::provider_timed_out(std::time::Duration::from_secs(5)))));
+    }
+
+    #[test]
+    fn health_comes_from_the_scanned_account() {
+        let mut g = ArchGraph::new();
+        let mut n = Node::new("arn:aws:lambda:us-east-1:111:function:a", NodeKind::LambdaFunction, "a");
+        n.account = Some("111".into());
+        g.upsert_node(n);
+        assert!(ensure_same_account(&g, "111", None).is_ok());
+        let e = ensure_same_account(&g, "222", Some("dev-admin")).unwrap_err().to_string();
+        assert!(e.contains("account 111") && e.contains("profile dev-admin") && e.contains("account 222"), "{e}");
+    }
 }

@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-24T19:36:15.175338131Z",
+  "taken_at": "2026-11-24T23:59:08.157277904Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -863,6 +863,7 @@
               "message": "pg: connection pool exhausted (max <n> connections), waited <n> ms"
             }
           ],
+          "read_at": null,
           "total": 7.0
         },
         "memory": "2048",
@@ -1355,6 +1356,7 @@
               "message": "KeyError: 'customer_id'"
             }
           ],
+          "read_at": null,
           "total": 26.0
         },
         "memory_mb": 512,
@@ -2957,7 +2959,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:PutObject",
-          "seen_at": "2026-11-24T19:36:15.174253748Z"
+          "seen_at": "2026-11-24T23:59:08.154885402Z"
         }
       ]
     },
@@ -2970,7 +2972,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:GetObject",
-          "seen_at": "2026-11-24T19:36:15.174280485Z"
+          "seen_at": "2026-11-24T23:59:08.154898895Z"
         }
       ]
     },
@@ -2983,7 +2985,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: sqs:ReceiveMessage",
-          "seen_at": "2026-11-24T19:36:15.174284015Z"
+          "seen_at": "2026-11-24T23:59:08.154901004Z"
         }
       ]
     },
@@ -4096,5 +4098,97 @@
         "monthly_cost": null
       }
     ]
+  },
+  "status": {
+    "level": "act_now",
+    "headline": "2 to act on now, 3 to plan for",
+    "account": "111122223333",
+    "counts": {
+      "act_now": 2,
+      "plan_for_it": 3,
+      "good_to_know": 2
+    },
+    "items": [
+      {
+        "key": "error_origin:arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+        "priority": "high",
+        "title": "Errors start at InvoiceProcessor",
+        "open": {
+          "type": "flow",
+          "id": "flow:arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT"
+        }
+      },
+      {
+        "key": "bottleneck:arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db",
+        "priority": "high",
+        "title": "checkout-orders-db saturates first",
+        "open": {
+          "type": "node",
+          "id": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db"
+        }
+      },
+      {
+        "key": "shared_dependency:arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+        "priority": "medium",
+        "title": "InvoicesTable is on 2 flows",
+        "open": {
+          "type": "node",
+          "id": "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC"
+        }
+      },
+      {
+        "key": "visibility_timeout:arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+        "priority": "medium",
+        "title": "checkout-order-events can be processed twice",
+        "open": {
+          "type": "node",
+          "id": "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+        }
+      },
+      {
+        "key": "missing_dlq:arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+        "priority": "medium",
+        "title": "checkout-order-events has no dead-letter queue",
+        "open": {
+          "type": "node",
+          "id": "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+        }
+      },
+      {
+        "key": "shared_dependency:arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev",
+        "priority": "low",
+        "title": "checkout-orders-db-dev is on 2 flows",
+        "open": {
+          "type": "node",
+          "id": "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev"
+        }
+      },
+      {
+        "key": "slow_hop:arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+        "priority": "low",
+        "title": "search-query-handler is most of the wait in “API calls to search”",
+        "open": {
+          "type": "flow",
+          "id": "flow:arn:aws:apigateway:us-east-1::/restapis/a1b2c3search"
+        }
+      }
+    ],
+    "flows_with_errors": [
+      {
+        "flow": "flow:arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
+        "name": "Web requests to checkout",
+        "errors": 45.0
+      },
+      {
+        "flow": "flow:arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose",
+        "name": "MonthlyClose runs",
+        "errors": 26.0
+      }
+    ],
+    "cleanup": {
+      "resources": 5,
+      "monthly_cost": 36.5
+    },
+    "stale_after_hours": 24
   }
 }

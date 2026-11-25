@@ -38,7 +38,7 @@ Arrows point inwards. Each crate may depend only on what is listed:
 | Crate | Layer | May depend on | Never |
 |---|---|---|---|
 | `sprawlr-domain` | domain | `serde`, `petgraph`, `chrono`, `regex` | I/O, async, AWS SDKs, any other sprawlr crate |
-| `sprawlr-app` | application | `sprawlr-domain`, `anyhow` | AWS SDKs, file system, Tauri |
+| `sprawlr-app` | application | `sprawlr-domain`, `anyhow`, `serde`, `chrono` | AWS SDKs, file system, Tauri, reading the clock (callers pass `now`) |
 | `sprawlr-docs` | adapter (presentation) | `sprawlr-domain` | I/O |
 | `sprawlr-aws` | adapter (driven) | `sprawlr-app`, `sprawlr-domain`, AWS SDKs | `sprawlr-fs`, drivers |
 | `sprawlr-fs` | adapter (driven) | `sprawlr-app`, `sprawlr-docs`, `sprawlr-domain` | AWS SDKs |
@@ -56,13 +56,16 @@ Defined in `crates/sprawlr-app/src/ports.rs`.
 | `HealthSource` | Alarms, metrics, traces for resources already in the graph | `Aws`, `Demo` (no-op) |
 | `ErrorLogSource` | Error lines from logs, kept as masked patterns | `Aws`, `Demo` (no-op) |
 | `SnapshotStore` | The latest snapshot between runs | `sprawlr_fs::FileSnapshotStore`, in-memory store in tests |
+| `SettingsStore` | The desktop app's choices (background refresh, notifications, last profile) | `sprawlr_fs::FileSettingsStore`, in-memory store in tests |
+| `Notifier` | Tells a person something got worse while they were not looking | `TauriNotifier` (desktop driver, since it needs Tauri), inbox double in tests |
 
 ## Use cases
 
 `crates/sprawlr-app/src/usecases.rs`:
 
 - `scan_account`: discover, then add IAM reach (`domain::iam`). Read health and error logs if asked. Infer apps and environments, analyse, and save.
-- `refresh_health`: same, from a snapshot, without rediscovering the structure.
+- `refresh_health`: same, from a snapshot, without rediscovering the structure. `RefreshOptions` says whether error logs are read again.
+- `refresh_in_background`: health only (never discovery or logs) for the stored scan, then at most one notification for what got worse, once a day per item.
 
 Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `sprawlr_fs::write_docs`.
 
@@ -76,6 +79,7 @@ Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `s
 | `insights::{flows, capacity, rules, lifecycle, signals}` | Flows from entry points, headroom and what-if, recommendations, cleanup |
 | `iam` | Policy evaluation: what a role allows, as `Permitted` edges; broad grants as findings |
 | `logs` | Error lines reduced to masked templates |
+| `status` | The account in one line for the tray: level, headline, items, flows with errors, cleanup; what got worse between two reads |
 | `fixtures` (feature) | The fictional demo account used by tests and the demo adapter |
 
 ## The snapshot contract
@@ -88,7 +92,7 @@ Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `s
 app/src/
   domain/      pure view logic over a snapshot (no React, no I/O), unit tested with vitest
   platform/    the Backend port and its adapters: tauri.ts (desktop), web.ts (browser demo)
-  features/    one folder per feature: map, flows, details, briefing, cleanup, docs, navigation, scan
+  features/    one folder per feature: map, flows, details, briefing, cleanup, docs, navigation, scan, tray
   ui/          small shared components (Spark)
   app/         the shell that composes features
 ```

@@ -11,7 +11,11 @@
 #[cfg(any(test, feature = "demo"))]
 pub mod demo;
 pub mod ports;
+pub mod settings;
 pub mod usecases;
 
-pub use ports::{Discovered, ErrorLogSource, HealthSource, InfraSource, Progress, SnapshotStore, Warnings};
-pub use usecases::{refresh_health, scan_account, ScanOptions, ScanResult};
+pub use ports::{
+    Discovered, ErrorLogSource, HealthSource, InfraSource, Notifier, Progress, SettingsStore, SignInNeeded, SnapshotStore, Warnings,
+};
+pub use settings::{next_wait, DesktopSettings, Every, Schedule};
+pub use usecases::{refresh_health, refresh_in_background, scan_account, Background, RefreshOptions, ScanOptions, ScanResult};

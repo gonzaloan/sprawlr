@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tray",
+  "description": "The status popover: core IPC only. Tray, notifications, autostart and positioning run in Rust.",
+  "windows": ["tray"],
+  "permissions": ["core:default"]
+}

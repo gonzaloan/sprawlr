@@ -7,7 +7,7 @@ import type { Backend } from "./backend";
 import { tauriBackend } from "./tauri";
 import { webBackend } from "./web";
 
-export type { Backend, ScanRequest } from "./backend";
+export type { Backend, Every, RefreshState, ScanRequest, Settings, SettingsInput } from "./backend";
 export { download } from "./web";
 
 /** The fictional demo account every build ships with. */

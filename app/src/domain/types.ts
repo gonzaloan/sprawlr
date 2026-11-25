@@ -61,6 +61,33 @@ export interface Snapshot {
   edges: ArchEdge[];
   findings?: Finding[];
   insights?: Insights;
+  /** Absent in snapshots written before it existed. */
+  status?: AccountStatus | null;
+}
+
+// ---- status.rs
+
+export type Level = "act_now" | "plan_for_it" | "all_clear" | "not_measured";
+
+export type Target = { type: "flow"; id: string } | { type: "node"; id: string } | { type: "cleanup" };
+
+export interface StatusItem {
+  key: string;
+  priority: Priority;
+  title: string;
+  open: Target;
+}
+
+export interface AccountStatus {
+  level: Level;
+  headline: string;
+  account: string | null;
+  counts: { act_now: number; plan_for_it: number; good_to_know: number };
+  items: StatusItem[];
+  flows_with_errors: { flow: string; name: string; errors: number }[];
+  cleanup: { resources: number; monthly_cost: number };
+  /** After this many hours the status is not shown as current. */
+  stale_after_hours: number;
 }
 
 // ---- insights.rs
@@ -93,6 +120,8 @@ export interface LogErrors {
   log_groups: string[];
   total: number;
   patterns: ErrorPattern[];
+  /** When the logs were read; background refreshes skip logs, so this can be older. */
+  read_at?: string | null;
 }
 
 export interface Flow {

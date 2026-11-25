@@ -14,6 +14,7 @@ pub mod infer;
 pub mod insights;
 pub mod logs;
 pub mod model;
+pub mod status;
 
 pub use graph::{ArchGraph, Snapshot};
 pub use model::*;

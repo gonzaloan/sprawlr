@@ -49,7 +49,7 @@ impl B {
             count: *c,
             last_seen: Some(t.to_string()),
         }));
-        let l = crate::logs::LogErrors { hours: 24, log_groups: vec![group.to_string()], total, patterns };
+        let l = crate::logs::LogErrors { hours: 24, log_groups: vec![group.to_string()], total, patterns, read_at: None };
         let n = self.g.node_mut(&id.into()).unwrap();
         n.attrs["log_errors"] = serde_json::to_value(l).unwrap();
     }

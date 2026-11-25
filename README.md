@@ -14,6 +14,10 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 
   ![Error patterns from a function's logs](docs/images/error-logs.png)
 
+- **Status from the menu bar**: sprawlr stays in the macOS menu bar or the Windows and Linux system tray. Its icon shows the account's level by shape (act now, plan for it, all clear, no status). A click opens a small card with the top items, the flows with errors and what is probably not needed, each one a click away in the full app. Background health refresh (every 15 min, 1 h or 4 h: up to 96 CloudWatch reads a day, each billed), notifications and launch at login are there too, all off by default.
+
+  ![The tray popover on the demo account](docs/images/tray-popover.png)
+
 - **Bottlenecks and what-if**: every resource's busiest hour against its limit (database CPU, service CPU and memory, Lambda concurrency, API throttles). Drag the traffic slider to see what saturates at 1.5× or 3× and in which order.
 - **Resources you can't see inside**: an EC2 worker's code is out of sight, but its IAM role says what it can touch. sprawlr reads every role's policies (wildcards, `NotAction`, denies), turns specific grants into dotted "allowed by IAM" connections and follows them in flows when nothing else is known. An S3 upload that notifies a queue read by an EC2 worker becomes the flow "Files uploaded to reports-uploads". Grants on a whole service (`dynamodb:*` on `*`) are reported, never drawn as lines to everything.
 

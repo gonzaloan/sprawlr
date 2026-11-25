@@ -130,7 +130,7 @@ async fn run(g: &mut ArchGraph, ctx: &ScanContext, progress: &Progress) -> anyho
     }
     for (id, lgs) in per_node {
         let (total, patterns) = group(lgs.iter().flat_map(|lg| rows.get(lg).cloned().unwrap_or_default()));
-        let l = LogErrors { hours: HOURS, log_groups: lgs.into_iter().collect(), total, patterns };
+        let l = LogErrors { hours: HOURS, log_groups: lgs.into_iter().collect(), total, patterns, read_at: Some(chrono::Utc::now()) };
         if let Some(n) = g.node_mut(&id) {
             if !n.attrs.is_object() {
                 n.attrs = serde_json::json!({});

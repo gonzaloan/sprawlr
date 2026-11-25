@@ -1,21 +1,36 @@
-// Browser adapter for the public demo: no AWS, no file system. Documentation for the demo
-// account is precomputed by the CLI (`sprawlr docs --json`).
+// Browser adapter for the public demo: no AWS, no file system, no tray. Documentation for
+// the demo account is precomputed by the CLI (`sprawlr docs --json`). `?view=tray` previews
+// the tray popover on the demo account.
 import type { DocFile, Snapshot } from "../domain";
 import demoDocs from "../demo/demo-docs.json";
-import type { Backend } from "./backend";
+import type { Backend, RefreshState } from "./backend";
 
-const desktopOnly = () => Promise.reject(new Error("Scanning an account needs the desktop app."));
+const desktopOnly = (what: string) => () => Promise.reject(new Error(`${what} needs the desktop app.`));
+const never = async () => () => {};
+const IDLE: RefreshState = { state: "idle", next_at: null, background: false, paused: false, reads_error_logs: false, warnings: 0 };
 
 export function webBackend(demo: Snapshot): Backend {
   return {
-    can: { scan: false, saveDocsToFolder: false },
+    can: { scan: false, saveDocsToFolder: false, tray: false },
+    view: async () => (new URLSearchParams(window.location.search).get("view") === "tray" ? "tray" : "main"),
     listProfiles: async () => [],
-    scan: desktopOnly,
-    refreshHealth: desktopOnly,
-    lastSnapshot: async () => null,
+    scan: desktopOnly("Scanning an account"),
+    refreshHealth: desktopOnly("Refreshing"),
+    // The tray preview reads the demo as if it were the stored scan.
+    lastSnapshot: async () => (new URLSearchParams(window.location.search).get("view") === "tray" ? demo : null),
     renderDocs: async (snapshot) => (snapshot === demo ? (demoDocs as DocFile[]) : null),
     saveDocs: async () => null,
-    onProgress: async () => () => {},
+    onProgress: never,
+    refreshStored: desktopOnly("Refreshing"),
+    refreshState: async () => IDLE,
+    onRefreshState: never,
+    onSnapshotChanged: never,
+    onOpenTarget: never,
+    onPopoverShown: never,
+    openMain: async () => {},
+    hidePopover: async () => {},
+    settings: async () => null,
+    saveSettings: desktopOnly("Settings"),
   };
 }
 

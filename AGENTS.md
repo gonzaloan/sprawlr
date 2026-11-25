@@ -120,7 +120,7 @@ The UI and docs speak to someone running a system, not to an engineer reading th
 
 - [ ] Tests for the behaviour, failing without the change.
 - [ ] `cargo test`, `clippy -D warnings`, `cargo fmt --check`, `npm run typecheck`, `npm test` and `npm run build` all pass.
-- [ ] Demo data regenerated if domain output changed, and the screenshots in `docs/images/` updated if the UI changed visibly.
+- [ ] Demo data regenerated if domain output changed, and the screenshots in `docs/images/` updated if the UI changed visibly (`python3 scripts/screenshots.py` against `npx vite preview`).
 - [ ] README and `docs/` updated for anything a user or contributor would notice.
 - [ ] An ADR in `docs/adr/` for any decision that changes a rule above.
 - [ ] One topic per PR. The description says what changed for the person using sprawlr.

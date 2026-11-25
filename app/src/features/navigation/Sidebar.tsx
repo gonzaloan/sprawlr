@@ -1,4 +1,6 @@
 import type { ArchNode, Flow } from "../../domain";
+import { Dot, healthLabel } from "../../ui/Dot";
+import { SideLabel } from "./SideLabel";
 import { displayName, fmtCount, type AppSummary, type Index } from "../../domain";
 import { Find } from "./Find";
 import type { ReactNode } from "react";
@@ -55,10 +57,7 @@ export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, un
         {flows.length > 0 && <h3 className="side__h">Flows</h3>}
         {flows.map((f) => (
           <button key={f.id} className={`side__item${is({ kind: "flow", id: f.id }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "flow", id: f.id })}>
-            <span className="side__name">
-              {f.errors_24h > 0 && <span className="dot dot--alarm" aria-label="Errors in the last 24 hours" />}
-              {f.name}
-            </span>
+            <SideLabel name={f.name} mark={f.errors_24h > 0 && <Dot tone="alarm" label="Errors in the last 24 hours" />} />
             <span className="muted">{f.runs_24h ? `${fmtCount(f.runs_24h)}/day` : ""}</span>
           </button>
         ))}
@@ -66,10 +65,7 @@ export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, un
         <h3 className="side__h">Apps</h3>
         {apps.map((a) => (
           <button key={a.name} className={`side__item${is({ kind: "app", name: a.name }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "app", name: a.name })}>
-            <span className="side__name">
-              {a.health !== "unknown" && <span className={`dot dot--${a.health}`} />}
-              {a.name}
-            </span>
+            <SideLabel name={a.name} mark={a.health !== "unknown" && <Dot tone={a.health} label={healthLabel(a.health)} />} />
             <span className="muted">{a.findings > 0 ? `${a.findings} to review` : a.count}</span>
           </button>
         ))}
@@ -77,14 +73,14 @@ export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, un
         {shared.length > 0 && <h3 className="side__h">Shared by several apps</h3>}
         {shared.map((n) => (
           <button key={n.id} className={`side__item${is({ kind: "resource", id: n.id }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "resource", id: n.id })}>
-            <span className="side__name">{displayName(n)}</span>
+            <SideLabel name={displayName(n)} />
           </button>
         ))}
 
         {unassigned.length > 0 && <h3 className="side__h">Not linked to an app</h3>}
         {unassigned.map((n) => (
           <button key={n.id} className={`side__item${is({ kind: "resource", id: n.id }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "resource", id: n.id })}>
-            <span className="side__name">{displayName(n)}</span>
+            <SideLabel name={displayName(n)} />
           </button>
         ))}
 

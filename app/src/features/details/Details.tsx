@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { EDGE_VERB, EVIDENCE_LABEL, METHOD_LABEL, alarmsOf, displayName, envName, fmtCount, fmtValue, fmtX, kindInfo, logErrorsOf, metricsOf, strength, vpcOf, type Index } from "../../domain";
+import { Dot } from "../../ui/Dot";
 import { Spark } from "../../ui/Spark";
 import type { ArchEdge, Capacity, Finding, Flow, Lifecycle, LogErrors } from "../../domain";
 
@@ -115,7 +116,7 @@ export function Details({ ix, id, findings, blastCount, onBlast, onSelect, onClo
           <h3>Last 24 hours</h3>
           {alarms.map((al) => (
             <div key={al.name} className={`alarm alarm--${al.state.toLowerCase()}`} title={al.reason ?? undefined}>
-              <span className={`dot dot--${al.state === "ALARM" ? "alarm" : al.state === "OK" ? "ok" : "unknown"}`} />
+              <Dot tone={al.state === "ALARM" ? "alarm" : al.state === "OK" ? "ok" : "unknown"} />
               <span className="alarm__name">{al.name}</span>
               <span className="muted">{al.state === "ALARM" ? "firing" : al.state === "OK" ? "OK" : "no data"}</span>
             </div>

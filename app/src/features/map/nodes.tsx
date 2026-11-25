@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { AppSummary, LoadState } from "../../domain";
 import type { Health, Layer } from "../../domain";
+import { Dot, healthLabel } from "../../ui/Dot";
 import { Spark } from "../../ui/Spark";
 
 export type Mark = "none" | "dim" | "hot" | "origin";
@@ -36,7 +37,6 @@ function LoadBar({ load }: { load: Load }) {
 export type AppData = { app: AppSummary; mark: Mark; load?: Load };
 export type TerritoryData = { name: string; detail: string };
 
-const HEALTH_TEXT: Record<Health, string> = { ok: "Healthy", warning: "Warning", alarm: "Alarm", unknown: "No health data" };
 
 function Ports() {
   return (
@@ -72,7 +72,7 @@ export function ResourceNode({ data, selected }: NodeProps<Node<ResourceData>>) 
           <Spark values={data.spark.values} width={44} height={18} tone={data.spark.alert ? "alarm" : "ink"} />
         </span>
       )}
-      {data.health !== "unknown" && <span className={`dot dot--${data.health}`} aria-label={HEALTH_TEXT[data.health]} />}
+      {data.health !== "unknown" && <Dot tone={data.health} label={healthLabel(data.health)} />}
       {data.findings > 0 && (
         <span className="res__flag" aria-label={`${data.findings} findings`}>
           {data.findings}
@@ -93,7 +93,7 @@ export function AppNode({ data, selected }: NodeProps<Node<AppData>>) {
         {a.count} resources in {a.envs.join(" and ") || "no environment"}
       </span>
       <span className="appnode__foot">
-        {a.health !== "unknown" && <span className={`dot dot--${a.health}`} />}
+        {a.health !== "unknown" && <Dot tone={a.health} label={healthLabel(a.health)} />}
         {a.findings > 0 ? `${a.findings} to review` : "Nothing to review"}
       </span>
       {data.load && <LoadBar load={data.load} />}

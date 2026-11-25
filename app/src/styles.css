@@ -58,7 +58,8 @@ button, input, select { font: inherit; color: inherit; }
 .side__item.is-on { background: var(--ground); box-shadow: inset 3px 0 0 var(--ink); font-weight: 600; }
 .side__item--map { font: 600 17px/1.2 var(--cond); padding: 9px 12px; }
 .side__item .muted { font: 400 13px var(--sans); white-space: nowrap; }
-.side__name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side__name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.side__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side__foot { border-top: 1px solid var(--rule); padding: 14px 16px 16px; }
 
 .scan { display: flex; flex-direction: column; gap: 10px; }

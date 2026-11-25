@@ -47,6 +47,16 @@ enum Cmd {
         #[arg(long)]
         json: Option<String>,
     },
+    /// Say what changed between two snapshots of the same account
+    Changes {
+        #[arg(long)]
+        before: String,
+        #[arg(long)]
+        after: String,
+        /// Print the full list as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Write the built-in demo account as a snapshot (no AWS needed)
     Demo {
         #[arg(long, default_value = "demo-snapshot.json")]
@@ -75,10 +85,26 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Cmd::Changes { before, after, json } => {
+            let (b, a) = (sprawlr_fs::read_snapshot(Path::new(&before))?, sprawlr_fs::read_snapshot(Path::new(&after))?);
+            let Some(c) = sprawlr_domain::changes::compare(&b, &a) else {
+                anyhow::bail!("these snapshots are of different accounts");
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&c)?);
+            } else {
+                println!("Since {}: {}", c.since.format("%Y-%m-%d %H:%M UTC"), c.summary);
+                for r in &c.rows {
+                    println!("  {}: {}", r.label, r.text);
+                }
+            }
+            Ok(())
+        }
         Cmd::Demo { out } => {
             let r = scan_account(&Demo, ScanOptions::default(), None, &progress).await?;
             report(&r);
-            write(&r.snapshot, &out)
+            // The demo tells what changed since a scan two days earlier.
+            write(&sprawlr_app::demo::with_changes(r.snapshot), &out)
         }
     }
 }

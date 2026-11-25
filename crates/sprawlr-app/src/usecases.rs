@@ -47,7 +47,7 @@ where
     if opts.error_logs {
         warnings.extend(source.read_errors(&mut graph, progress).await?);
     }
-    finish(graph, warnings, store, progress)
+    finish(graph, warnings, store, Read::Scan, progress)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,7 +79,7 @@ where
     if opts.error_logs {
         warnings.extend(source.read_errors(&mut graph, progress).await?);
     }
-    finish(graph, warnings, store, progress)
+    finish(graph, warnings, store, Read::Refresh { since: snapshot.changes.as_ref().map(|c| c.since) }, progress)
 }
 
 /// One background refresh: health only (never discovery, never error logs, which bill per
@@ -124,14 +124,54 @@ pub struct Background {
     pub notified: Option<Notice>,
 }
 
-fn finish(mut graph: ArchGraph, warnings: Warnings, store: Option<&dyn SnapshotStore>, progress: &Progress) -> anyhow::Result<ScanResult> {
+/// A full scan (new structure), or a refresh (same structure, new health) of a snapshot
+/// that was compared with the scan taken at `since`, if any.
+#[derive(Clone, Copy, PartialEq)]
+enum Read {
+    Scan,
+    Refresh { since: Option<chrono::DateTime<chrono::Utc>> },
+}
+
+fn finish(
+    mut graph: ArchGraph,
+    mut warnings: Warnings,
+    store: Option<&dyn SnapshotStore>,
+    read: Read,
+    progress: &Progress,
+) -> anyhow::Result<ScanResult> {
     progress("working out apps, flows and findings".into());
     infer(&mut graph);
-    let snapshot = graph.snapshot();
+    let mut snapshot = graph.snapshot();
     if let Some(s) = store {
+        // History never fails a read: what changed is a bonus, the scan is the point.
+        match baseline(s, &snapshot, read) {
+            Ok(Some(before)) => snapshot.changes = sprawlr_domain::changes::compare(&before, &snapshot),
+            Ok(None) => {}
+            Err(e) => warnings.push(format!("history: {e:#}")),
+        }
         s.save(&snapshot)?;
+        if read == Read::Scan {
+            if let Err(e) = s.record_scan(&snapshot) {
+                warnings.push(format!("history: {e:#}"));
+            }
+        }
     }
     Ok(ScanResult { snapshot, warnings })
+}
+
+/// What to tell changes against. A scan: the newest kept scan of the same account. A
+/// refresh: the scan the refreshed snapshot was already compared with, if any (it may be an
+/// older file, so "the newest scan" would tell the story backwards).
+fn baseline(store: &dyn SnapshotStore, snapshot: &Snapshot, read: Read) -> anyhow::Result<Option<Snapshot>> {
+    let Some(account) = snapshot.nodes.iter().find_map(|n| n.account.clone()) else { return Ok(None) };
+    let at = match read {
+        Read::Scan => store.scans(&account)?.last().copied(),
+        Read::Refresh { since } => since,
+    };
+    match at {
+        Some(t) => store.scan(&account, t),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -142,7 +182,7 @@ mod tests {
     use std::sync::Mutex;
 
     #[derive(Default)]
-    struct Memory(Mutex<Option<Snapshot>>);
+    struct Memory(Mutex<Option<Snapshot>>, Mutex<Vec<Snapshot>>);
 
     impl SnapshotStore for Memory {
         fn save(&self, s: &Snapshot) -> anyhow::Result<()> {
@@ -152,6 +192,53 @@ mod tests {
         fn latest(&self) -> anyhow::Result<Option<Snapshot>> {
             Ok(self.0.lock().unwrap().clone())
         }
+        fn record_scan(&self, s: &Snapshot) -> anyhow::Result<()> {
+            self.1.lock().unwrap().push(s.clone());
+            Ok(())
+        }
+        fn scans(&self, account: &str) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
+            Ok(self.1.lock().unwrap().iter().filter(|s| acct(s) == account).map(|s| s.taken_at).collect())
+        }
+        fn scan(&self, account: &str, at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
+            Ok(self.1.lock().unwrap().iter().find(|s| acct(s) == account && s.taken_at == at).cloned())
+        }
+    }
+
+    fn acct(s: &Snapshot) -> &str {
+        s.nodes.iter().find_map(|n| n.account.as_deref()).unwrap_or("")
+    }
+
+    #[tokio::test]
+    async fn changes_are_told_against_the_previous_scan() {
+        let store = Memory::default();
+        let first = scan_account(&Demo, ScanOptions::default(), Some(&store), &silent()).await.unwrap();
+        assert!(first.snapshot.changes.is_none(), "nothing to compare the first scan with");
+        let second = scan_account(&Demo, ScanOptions::default(), Some(&store), &silent()).await.unwrap();
+        let c = second.snapshot.changes.clone().expect("compared with the first scan");
+        assert_eq!(c.since, first.snapshot.taken_at);
+        assert!(c.is_empty(), "the same account twice: {}", c.headline());
+        // A refresh keeps telling changes since the scan before the one it refreshes.
+        let refreshed =
+            refresh_health(&Demo, &second.snapshot, RefreshOptions { error_logs: false }, Some(&store), &silent()).await.unwrap();
+        assert_eq!(refreshed.snapshot.changes.unwrap().since, first.snapshot.taken_at);
+        assert_eq!(store.scans(acct(&first.snapshot)).unwrap().len(), 2, "refreshes are not kept as scans");
+
+        // Refreshing an older file never compares it with newer scans.
+        let mut file = first.snapshot.clone();
+        file.changes = None;
+        let r = refresh_health(&Demo, &file, RefreshOptions { error_logs: false }, Some(&store), &silent()).await.unwrap();
+        assert!(r.snapshot.changes.is_none());
+    }
+
+    #[tokio::test]
+    async fn another_account_in_between_does_not_hide_changes() {
+        let store = Memory::default();
+        let first = scan_account(&Demo, ScanOptions::default(), Some(&store), &silent()).await.unwrap();
+        let mut other = first.snapshot.clone();
+        other.nodes.iter_mut().for_each(|n| n.account = Some("999".into()));
+        store.record_scan(&other).unwrap();
+        let again = scan_account(&Demo, ScanOptions::default(), Some(&store), &silent()).await.unwrap();
+        assert_eq!(again.snapshot.changes.expect("compared with the same account").since, first.snapshot.taken_at);
     }
 
     #[tokio::test]

@@ -135,7 +135,7 @@ mod tests {
         let mut s = server();
         let r = call(&mut s, r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
         let tools = r["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
         assert!(tools.iter().all(|t| t["annotations"]["readOnlyHint"] == true && t["inputSchema"]["type"] == "object"));
     }
 

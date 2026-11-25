@@ -6,6 +6,7 @@ import {
   isStale,
   logsNoteOf,
   monthlyCost,
+  changesLine,
   readAgo,
   statusOf,
   type Priority,
@@ -145,6 +146,8 @@ export function TrayPopover() {
             </p>
           </div>
         </section>
+
+        {changesLine(snap) && <p className="tray__changes small">{changesLine(snap)}</p>}
 
         <div className="tray__scroll">
           {top.length > 0 && (

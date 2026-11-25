@@ -84,6 +84,12 @@ pub fn all() -> Vec<Tool> {
             input: optional_app(),
         },
         Tool {
+            name: "what_changed",
+            title: "What changed",
+            description: "What changed since the previous scan of the account: resources added and removed, settings that moved (memory, timeouts, images, capacity, encryption, exposure), connections gained and lost, findings opened and resolved, health changes and new error messages.",
+            input: none(),
+        },
+        Tool {
             name: "what_to_clean",
             title: "Probably not needed",
             description: "Resources that look idle (no activity for 14 days), orphaned (nothing uses them) or zombie (still billed, doing nothing), with the reason and a list-price monthly cost where one applies.",
@@ -138,6 +144,7 @@ pub fn call(name: &str, args: &Value, s: &Snapshot) -> Result<Value, String> {
         "why_failing" => to_json(queries::why_failing(s, app).map_err(e)?),
         "recommendations" => to_json(json!({ "recommendations": queries::recommendations(s, app).map_err(e)? })),
         "what_to_clean" => to_json(queries::cleanup(s)),
+        "what_changed" => to_json(queries::changes(s)),
         "find_resources" => {
             let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(10).clamp(1, 50) as usize;
             to_json(json!({ "resources": queries::find(s, arg(args, "text")?, limit) }))

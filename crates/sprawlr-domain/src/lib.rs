@@ -6,6 +6,7 @@
 //! for evidence timestamps. Adapters feed it; use cases in `sprawlr-app` orchestrate it.
 
 pub mod analysis;
+pub mod changes;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod fixtures;
 pub mod graph;

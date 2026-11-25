@@ -10,6 +10,7 @@ sprawlr-domain = { path = "../sprawlr-domain" }
 sprawlr-app = { path = "../sprawlr-app" }
 sprawlr-docs = { path = "../sprawlr-docs" }
 anyhow = "1"
+chrono = "0.4"
 serde_json = "1"
 
 [dev-dependencies]

@@ -165,7 +165,7 @@ impl ArchGraph {
         edges.sort_by(|a, b| (&a.from, &a.to, a.edge.kind).cmp(&(&b.from, &b.to, b.edge.kind)));
         let insights = crate::insights::analyze(self);
         let status = Some(crate::status::of(self, &insights));
-        Snapshot { taken_at: chrono::Utc::now(), findings: crate::analysis::findings(self), insights, status, nodes, edges }
+        Snapshot { taken_at: chrono::Utc::now(), findings: crate::analysis::findings(self), insights, status, changes: None, nodes, edges }
     }
 
     /// Rebuild a graph from a stored snapshot (e.g. a file opened in the app).
@@ -199,6 +199,10 @@ pub struct Snapshot {
     /// before it existed: use `status_or_compute`.
     #[serde(default)]
     pub status: Option<crate::status::AccountStatus>,
+    /// What changed since the previous scan of the same account, when there is one (set by
+    /// the use case that keeps the history).
+    #[serde(default)]
+    pub changes: Option<crate::changes::Changes>,
 }
 
 impl Snapshot {

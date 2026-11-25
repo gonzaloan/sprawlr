@@ -1,9 +1,12 @@
 import { displayName, fmtCount, fmtX, monthlyCost, type Index } from "../../domain";
-import type { Insights, Priority } from "../../domain";
+import type { Changes, Insights, Priority } from "../../domain";
+import { ChangesCard } from "../changes/ChangesCard";
 
 interface Props {
   ix: Index;
   ins: Insights;
+  /** What changed since the previous scan, when known. */
+  changes?: Changes | null;
   onNode: (id: string) => void;
   onFlow: (id: string) => void;
   onCleanup: () => void;
@@ -13,7 +16,7 @@ interface Props {
 const PRIORITY: Record<Priority, string> = { high: "Act now", medium: "Plan for it", low: "Good to know" };
 
 /** What deserves attention in this account, most important first. */
-export function Briefing({ ix, ins, onNode, onFlow, onCleanup, onWhatIf }: Props) {
+export function Briefing({ ix, ins, changes, onNode, onFlow, onCleanup, onWhatIf }: Props) {
   const name = (id: string) => {
     const n = ix.byId.get(id);
     return n ? displayName(n) : id;
@@ -30,6 +33,8 @@ export function Briefing({ ix, ins, onNode, onFlow, onCleanup, onWhatIf }: Props
           {ins.flows.length} flows handle about {fmtCount(runs)} requests and runs a day.
         </p>
       </header>
+
+      {changes && <ChangesCard changes={changes} ix={ix} onNode={onNode} />}
 
       {first && (
         <button className="brief-card brief-card--capacity" onClick={onWhatIf}>

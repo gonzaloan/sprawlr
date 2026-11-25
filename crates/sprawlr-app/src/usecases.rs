@@ -47,7 +47,7 @@ where
     if opts.error_logs {
         warnings.extend(source.read_errors(&mut graph, progress).await?);
     }
-    finish(graph, warnings, store, progress)
+    finish(graph, warnings, store, Read::Scan, progress)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,7 +79,7 @@ where
     if opts.error_logs {
         warnings.extend(source.read_errors(&mut graph, progress).await?);
     }
-    finish(graph, warnings, store, progress)
+    finish(graph, warnings, store, Read::Refresh, progress)
 }
 
 /// One background refresh: health only (never discovery, never error logs, which bill per
@@ -124,12 +124,40 @@ pub struct Background {
     pub notified: Option<Notice>,
 }
 
-fn finish(mut graph: ArchGraph, warnings: Warnings, store: Option<&dyn SnapshotStore>, progress: &Progress) -> anyhow::Result<ScanResult> {
+/// A full scan (new structure) or a refresh (same structure, new health).
+#[derive(Clone, Copy, PartialEq)]
+enum Read {
+    Scan,
+    Refresh,
+}
+
+fn finish(
+    mut graph: ArchGraph,
+    warnings: Warnings,
+    store: Option<&dyn SnapshotStore>,
+    read: Read,
+    progress: &Progress,
+) -> anyhow::Result<ScanResult> {
     progress("working out apps, flows and findings".into());
     infer(&mut graph);
-    let snapshot = graph.snapshot();
+    let mut snapshot = graph.snapshot();
     if let Some(s) = store {
+        // Changes are told against the previous full scan: for a scan, the newest kept one;
+        // for a refresh, the one before the scan it refreshes.
+        let scans = s.scans()?;
+        let baseline = match read {
+            Read::Scan => scans.last(),
+            Read::Refresh => scans.len().checked_sub(2).and_then(|i| scans.get(i)),
+        };
+        if let Some(at) = baseline {
+            if let Some(before) = s.scan(*at)? {
+                snapshot.changes = sprawlr_domain::changes::compare(&before, &snapshot);
+            }
+        }
         s.save(&snapshot)?;
+        if read == Read::Scan {
+            s.record_scan(&snapshot)?;
+        }
     }
     Ok(ScanResult { snapshot, warnings })
 }
@@ -142,7 +170,7 @@ mod tests {
     use std::sync::Mutex;
 
     #[derive(Default)]
-    struct Memory(Mutex<Option<Snapshot>>);
+    struct Memory(Mutex<Option<Snapshot>>, Mutex<Vec<Snapshot>>);
 
     impl SnapshotStore for Memory {
         fn save(&self, s: &Snapshot) -> anyhow::Result<()> {
@@ -152,6 +180,32 @@ mod tests {
         fn latest(&self) -> anyhow::Result<Option<Snapshot>> {
             Ok(self.0.lock().unwrap().clone())
         }
+        fn record_scan(&self, s: &Snapshot) -> anyhow::Result<()> {
+            self.1.lock().unwrap().push(s.clone());
+            Ok(())
+        }
+        fn scans(&self) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
+            Ok(self.1.lock().unwrap().iter().map(|s| s.taken_at).collect())
+        }
+        fn scan(&self, at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
+            Ok(self.1.lock().unwrap().iter().find(|s| s.taken_at == at).cloned())
+        }
+    }
+
+    #[tokio::test]
+    async fn changes_are_told_against_the_previous_scan() {
+        let store = Memory::default();
+        let first = scan_account(&Demo, ScanOptions::default(), Some(&store), &silent()).await.unwrap();
+        assert!(first.snapshot.changes.is_none(), "nothing to compare the first scan with");
+        let second = scan_account(&Demo, ScanOptions::default(), Some(&store), &silent()).await.unwrap();
+        let c = second.snapshot.changes.clone().expect("compared with the first scan");
+        assert_eq!(c.since, first.snapshot.taken_at);
+        assert!(c.is_empty(), "the same account twice: {}", c.headline());
+        // A refresh keeps telling changes since the scan before the one it refreshes.
+        let refreshed =
+            refresh_health(&Demo, &second.snapshot, RefreshOptions { error_logs: false }, Some(&store), &silent()).await.unwrap();
+        assert_eq!(refreshed.snapshot.changes.unwrap().since, first.snapshot.taken_at);
+        assert_eq!(store.scans().unwrap().len(), 2, "refreshes are not kept as scans");
     }
 
     #[tokio::test]

@@ -55,7 +55,7 @@ Defined in `crates/sprawlr-app/src/ports.rs`.
 | `InfraSource` | The structure of an account: resources, containment, declared connections | `sprawlr_aws::Aws`, `sprawlr_app::demo::Demo` |
 | `HealthSource` | Alarms, metrics, traces for resources already in the graph | `Aws`, `Demo` (no-op) |
 | `ErrorLogSource` | Error lines from logs, kept as masked patterns | `Aws`, `Demo` (no-op) |
-| `SnapshotStore` | The latest snapshot between runs | `sprawlr_fs::FileSnapshotStore`, in-memory store in tests |
+| `SnapshotStore` | The latest snapshot between runs, and optionally the last full scans (to say what changed) | `sprawlr_fs::FileSnapshotStore` (keeps 30 scans in `history/`), in-memory store in tests |
 | `SettingsStore` | The desktop app's choices (background refresh, notifications, last profile) | `sprawlr_fs::FileSettingsStore`, in-memory store in tests |
 | `Notifier` | Tells a person something got worse while they were not looking | `TauriNotifier` (desktop driver, since it needs Tauri), inbox double in tests |
 
@@ -65,6 +65,7 @@ Defined in `crates/sprawlr-app/src/ports.rs`.
 
 - `scan_account`: discover, then add IAM reach (`domain::iam`). Read health and error logs if asked. Infer apps and environments, analyse, and save.
 - `refresh_health`: same, from a snapshot, without rediscovering the structure. `RefreshOptions` says whether error logs are read again.
+- Both tell what changed against the previous full scan in the store (for a refresh, the scan before the one it refreshes) and keep full scans in the history.
 - `refresh_in_background`: health only (never discovery or logs) for the stored scan, then at most one notification for what got worse, once a day per item.
 
 `queries` answers questions about a snapshot as plain data (status, apps, flows, a resource with its connections and evidence, blast radius, failures, recommendations, cleanup, search). The MCP server is a thin driver over it, and other drivers can reuse it.
@@ -82,6 +83,7 @@ Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `s
 | `iam` | Policy evaluation: what a role allows, as `Permitted` edges; broad grants as findings |
 | `logs` | Error lines reduced to masked templates |
 | `status` | The account in one line for the tray: level, headline, items, flows with errors, cleanup; what got worse between two reads |
+| `changes` | What changed between two scans of the same account, stored with the snapshot |
 | `fixtures` (feature) | The fictional demo account used by tests and the demo adapter |
 
 ## The snapshot contract

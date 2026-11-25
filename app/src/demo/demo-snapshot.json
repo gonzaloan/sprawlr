@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-24T23:59:08.157277904Z",
+  "taken_at": "2026-11-25T00:34:44.517467194Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -2959,7 +2959,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:PutObject",
-          "seen_at": "2026-11-24T23:59:08.154885402Z"
+          "seen_at": "2026-11-25T00:34:44.515122627Z"
         }
       ]
     },
@@ -2972,7 +2972,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:GetObject",
-          "seen_at": "2026-11-24T23:59:08.154898895Z"
+          "seen_at": "2026-11-25T00:34:44.515138031Z"
         }
       ]
     },
@@ -2985,7 +2985,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: sqs:ReceiveMessage",
-          "seen_at": "2026-11-24T23:59:08.154901004Z"
+          "seen_at": "2026-11-25T00:34:44.515140723Z"
         }
       ]
     },
@@ -4190,5 +4190,56 @@
       "monthly_cost": 36.5
     },
     "stale_after_hours": 24
+  },
+  "changes": {
+    "since": "2026-11-23T00:34:44.524189788Z",
+    "summary": "1 new resource, 1 removed, 1 setting changed, 1 new thing to look at, 1 new error message",
+    "added": [
+      {
+        "id": "arn:aws:s3:::reports-output",
+        "name": "reports-output",
+        "kind": "S3 bucket",
+        "app": "reporting"
+      }
+    ],
+    "removed": [
+      {
+        "id": "arn:aws:ec2:us-east-1:111122223333:security-group/sg-0batch2023",
+        "name": "batch-2023-sg",
+        "kind": "Security group",
+        "app": null
+      }
+    ],
+    "settings": [
+      {
+        "resource": {
+          "id": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+          "name": "InvoiceProcessor",
+          "kind": "Lambda function",
+          "app": "billing"
+        },
+        "setting": "timeout_s",
+        "label": "Timeout (s)",
+        "before": "5",
+        "after": "60"
+      }
+    ],
+    "connections_added": [],
+    "connections_removed": [],
+    "findings_new": [],
+    "findings_resolved": [],
+    "attention_new": [
+      "checkout-order-events can be processed twice"
+    ],
+    "attention_resolved": [],
+    "level": null,
+    "health": [],
+    "new_errors": [
+      "checkout-api: pg: connection pool exhausted (max <n> connections), waited <n> ms"
+    ],
+    "cleanup_monthly": [
+      36.5,
+      36.5
+    ]
   }
 }

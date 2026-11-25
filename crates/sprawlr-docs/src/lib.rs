@@ -16,10 +16,52 @@ pub struct DocFile {
 }
 
 /// All documentation for the account: `README.md` plus `apps/<app>.md`.
-/// Pages for a snapshot, dated by when it was taken.
+/// Pages for a snapshot, dated by when it was taken, with what changed since the previous
+/// scan when the snapshot knows.
 pub fn render(snapshot: &sprawlr_domain::Snapshot) -> Vec<DocFile> {
     let g = ArchGraph::from_snapshot(snapshot);
-    generate(&g, &snapshot.findings, &snapshot.taken_at.format("%Y-%m-%d").to_string())
+    let mut files = generate(&g, &snapshot.findings, &snapshot.taken_at.format("%Y-%m-%d").to_string());
+    if let (Some(c), Some(index)) = (&snapshot.changes, files.iter_mut().find(|f| f.path == "README.md")) {
+        let section = changes_section(c);
+        match index.content.find("\n## ") {
+            Some(at) => index.content.insert_str(at + 1, &section),
+            None => index.content.push_str(&section),
+        }
+    }
+    files
+}
+
+/// "Changes since 2026-11-22": what moved between two scans, in lists a reviewer can scan.
+fn changes_section(c: &sprawlr_domain::changes::Changes) -> String {
+    let mut s = format!("## Changes since {}\n\n{}.\n\n", c.since.format("%Y-%m-%d %H:%M UTC"), c.headline());
+    let mut list = |title: &str, items: Vec<String>| {
+        if !items.is_empty() {
+            let _ = writeln!(s, "**{title}**\n");
+            for i in items {
+                let _ = writeln!(s, "- {i}");
+            }
+            s.push('\n');
+        }
+    };
+    list("New", c.added.iter().map(|i| format!("{} ({})", i.name, i.kind)).collect());
+    list("Removed", c.removed.iter().map(|i| format!("{} ({})", i.name, i.kind)).collect());
+    list("Settings", c.settings.iter().map(|x| format!("{}: {} {} → {}", x.resource.name, x.label, x.before, x.after)).collect());
+    list(
+        "Connections",
+        c.connections_added
+            .iter()
+            .map(|x| format!("new: {} {} {}", x.from, x.verb, x.to))
+            .chain(c.connections_removed.iter().map(|x| format!("gone: {} {} {}", x.from, x.verb, x.to)))
+            .collect(),
+    );
+    list("Needs attention now", c.attention_new.clone());
+    list("No longer needs attention", c.attention_resolved.clone());
+    list("New findings", c.findings_new.clone());
+    list("Resolved findings", c.findings_resolved.clone());
+    let health = |h: &sprawlr_domain::Health| serde_json::to_value(h).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    list("Health", c.health.iter().map(|h| format!("{}: {} → {}", h.resource.name, health(&h.before), health(&h.after))).collect());
+    list("New error messages", c.new_errors.iter().map(|e| format!("`{}`", e.replace('`', "'"))).collect());
+    s
 }
 
 pub fn generate(g: &ArchGraph, findings: &[Finding], generated_on: &str) -> Vec<DocFile> {

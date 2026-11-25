@@ -42,10 +42,25 @@ pub trait ErrorLogSource {
     fn read_errors(&self, graph: &mut ArchGraph, progress: &Progress) -> impl Future<Output = anyhow::Result<Warnings>> + Send;
 }
 
-/// Where the latest snapshot is kept between runs.
+/// Where the latest snapshot is kept between runs, and (optionally) earlier full scans to
+/// say what changed.
 pub trait SnapshotStore: Send + Sync {
     fn save(&self, snapshot: &Snapshot) -> anyhow::Result<()>;
     fn latest(&self) -> anyhow::Result<Option<Snapshot>>;
+
+    /// Keep a full scan in the history. Stores without history ignore it.
+    fn record_scan(&self, _snapshot: &Snapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Full scans kept, oldest first.
+    fn scans(&self) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
+        Ok(vec![])
+    }
+
+    fn scan(&self, _taken_at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
+        Ok(None)
+    }
 }
 
 /// Tells a person something changed while they were not looking (desktop notifications).

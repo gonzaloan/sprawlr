@@ -398,3 +398,19 @@ button, input, select { font: inherit; color: inherit; }
   .tray__status { animation: tray-in 160ms ease-out; }
   @keyframes tray-in { from { opacity: 0.4; } to { opacity: 1; } }
 }
+
+/* ------------------------------------------------------------- changes since the previous scan */
+.changes { border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); padding: 12px 14px; margin-bottom: 14px; }
+.changes h3 { font: 600 17px/1.2 var(--cond); }
+.changes__summary { color: var(--ink-soft); font-size: 13.5px; margin: 2px 0 8px; }
+.changes__list { list-style: none; margin: 0 0 6px; padding: 0; }
+.changes__row { display: grid; grid-template-columns: 104px 1fr; gap: 8px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; padding: 4px 6px; margin: 0 -6px; width: calc(100% + 12px); border-radius: 6px; font-size: 13.5px; }
+button.changes__row { cursor: pointer; }
+button.changes__row:hover { background: var(--ground); }
+.changes__tag { font-size: 12px; color: var(--muted); border-left: 3px solid var(--rule); padding-left: 6px; }
+.changes__tag--attention, .changes__tag--error { border-left-color: var(--alarm); color: var(--ink-soft); }
+.changes__tag--health, .changes__tag--changed { border-left-color: var(--warn); }
+.changes__tag--new { border-left-color: var(--l-edge); }
+.changes__tag--resolved { border-left-color: var(--ok); }
+.changes__text { overflow-wrap: anywhere; }
+.tray__changes { padding: 8px 14px; border-bottom: 1px solid var(--rule); color: var(--ink-soft); }

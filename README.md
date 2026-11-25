@@ -14,6 +14,8 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 
   ![Error patterns from a function's logs](docs/images/error-logs.png)
 
+- **What changed since the last scan**: every scan is compared with the previous one of the same account. It lists resources added and removed, settings that moved (memory, timeouts, images, capacity, encryption, exposure), connections gained and lost, what newly needs attention, health changes and new error messages. The briefing, the tray, the generated docs, the MCP server (`what_changed`) and `sprawlr changes --before a.json --after b.json` all say it the same way. The desktop app keeps the last 30 scans.
+
 - **Status from the menu bar**: sprawlr stays in the macOS menu bar or the Windows and Linux system tray. Its icon shows the account's level by shape (act now, plan for it, all clear, no status). A click opens a small card with the top items, the flows with errors and what is probably not needed, each one a click away in the full app. Background health refresh (every 15 min, 1 h or 4 h: up to 96 CloudWatch reads a day, each billed), notifications and launch at login are there too, all off by default.
 
   ![The tray popover on the demo account](docs/images/tray-popover.png)
@@ -89,6 +91,7 @@ For other clients, add `{"mcpServers": {"sprawlr": {"command": "sprawlr-mcp", "a
 | `why_failing` | Where errors start and the most frequent messages |
 | `recommendations` | What to do, most important first |
 | `what_to_clean` | Idle, orphaned and zombie resources with their monthly cost |
+| `what_changed` | What moved since the previous scan |
 | `find_resources` | Exact names to ask about |
 
 ## Layout

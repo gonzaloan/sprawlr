@@ -47,6 +47,16 @@ enum Cmd {
         #[arg(long)]
         json: Option<String>,
     },
+    /// Say what changed between two snapshots of the same account
+    Changes {
+        #[arg(long)]
+        before: String,
+        #[arg(long)]
+        after: String,
+        /// Print the full list as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Write the built-in demo account as a snapshot (no AWS needed)
     Demo {
         #[arg(long, default_value = "demo-snapshot.json")]
@@ -75,10 +85,41 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Cmd::Changes { before, after, json } => {
+            let (b, a) = (sprawlr_fs::read_snapshot(Path::new(&before))?, sprawlr_fs::read_snapshot(Path::new(&after))?);
+            let Some(c) = sprawlr_domain::changes::compare(&b, &a) else {
+                anyhow::bail!("these snapshots are of different accounts");
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&c)?);
+            } else {
+                println!("Since {}: {}", c.since.format("%Y-%m-%d %H:%M UTC"), c.headline());
+                for i in &c.added {
+                    println!("  + {} ({})", i.name, i.kind);
+                }
+                for i in &c.removed {
+                    println!("  - {} ({})", i.name, i.kind);
+                }
+                for x in &c.settings {
+                    println!("  ~ {}: {} {} -> {}", x.resource.name, x.label, x.before, x.after);
+                }
+                for f in &c.findings_new {
+                    println!("  ! {f}");
+                }
+                for f in &c.findings_resolved {
+                    println!("  ✓ {f}");
+                }
+                for e in &c.new_errors {
+                    println!("  ! new error: {e}");
+                }
+            }
+            Ok(())
+        }
         Cmd::Demo { out } => {
             let r = scan_account(&Demo, ScanOptions::default(), None, &progress).await?;
             report(&r);
-            write(&r.snapshot, &out)
+            // The demo tells what changed since a scan two days earlier.
+            write(&sprawlr_app::demo::with_changes(r.snapshot), &out)
         }
     }
 }

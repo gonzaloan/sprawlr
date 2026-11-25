@@ -33,6 +33,15 @@ export function readAgo(takenAt: string, now: Date): string {
   return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** "12 min ago", "5 h ago", "3 days ago": always relative. */
+export function timeAgo(iso: string, now: Date): string {
+  const min = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 60_000));
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 48 * 60) return `${Math.floor(min / 60)} h ago`;
+  return `${Math.floor(min / 1440)} days ago`;
+}
+
 /** "$37" style, as the briefing prints it. */
 export function monthlyCost(usd: number): string {
   return `$${usd.toFixed(0)}`;

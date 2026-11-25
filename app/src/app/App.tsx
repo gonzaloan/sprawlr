@@ -329,6 +329,7 @@ export default function App() {
         <Briefing
           ix={ix}
           ins={ins}
+          changes={snap.changes}
           onNode={showNode}
           onFlow={(id) => go({ kind: "flow", id })}
           onCleanup={() => go({ kind: "cleanup" })}

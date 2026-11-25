@@ -63,6 +63,35 @@ export interface Snapshot {
   insights?: Insights;
   /** Absent in snapshots written before it existed. */
   status?: AccountStatus | null;
+  /** What changed since the previous scan of the account, when there is one. */
+  changes?: Changes | null;
+}
+
+// ---- changes.rs
+
+export interface ChangeItem {
+  id: string;
+  name: string;
+  kind: string;
+  app: string | null;
+}
+
+export interface Changes {
+  since: string;
+  summary: string;
+  added: ChangeItem[];
+  removed: ChangeItem[];
+  settings: { resource: ChangeItem; setting: string; label: string; before: string; after: string }[];
+  connections_added: { from: string; verb: string; to: string }[];
+  connections_removed: { from: string; verb: string; to: string }[];
+  findings_new: string[];
+  findings_resolved: string[];
+  attention_new: string[];
+  attention_resolved: string[];
+  level: [Level, Level] | null;
+  health: { resource: ChangeItem; before: Health; after: Health }[];
+  new_errors: string[];
+  cleanup_monthly: [number, number];
 }
 
 // ---- status.rs

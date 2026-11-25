@@ -456,6 +456,32 @@ pub fn blast_radius(s: &Snapshot, q: &str) -> Result<BlastAnswer, Lookup> {
     })
 }
 
+// ------------------------------------------------------------------ changes
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChangesAnswer {
+    /// False when this scan has nothing to compare with (the first scan, or a file).
+    pub known: bool,
+    pub headline: String,
+    pub changes: Option<sprawlr_domain::changes::Changes>,
+}
+
+/// What changed since the previous scan of the account.
+pub fn changes(s: &Snapshot) -> ChangesAnswer {
+    match &s.changes {
+        Some(c) => ChangesAnswer {
+            known: true,
+            headline: format!("Since {}: {}", c.since.format("%Y-%m-%d %H:%M UTC"), c.headline()),
+            changes: Some(c.clone()),
+        },
+        None => ChangesAnswer {
+            known: false,
+            headline: "No earlier scan of this account to compare with. Scan again later to see what changes.".into(),
+            changes: None,
+        },
+    }
+}
+
 // ------------------------------------------------------------------ failures
 
 #[derive(Debug, Clone, Serialize)]

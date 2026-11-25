@@ -2,6 +2,8 @@
 
 A local desktop map of your AWS account. It reads your infrastructure (read-only), works out which resources belong to which app and environment, and draws how they talk to each other.
 
+**[Try the demo in your browser](https://gonzaloan.github.io/sprawlr/)**: a fictional account, nothing to install. The [tray popover](https://gonzaloan.github.io/sprawlr/?view=tray) is there too. Scanning your own account needs the desktop app.
+
 ![Whole account with what needs attention](docs/images/overview.png)
 
 ![A flow under 1.5× traffic](docs/images/flow-whatif.png)

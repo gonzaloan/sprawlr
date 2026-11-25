@@ -25,12 +25,8 @@ export function isStale(takenAt: string, now: Date, status: Pick<AccountStatus, 
 
 /** "just now", "12 min ago", "5 h ago", then the date. */
 export function readAgo(takenAt: string, now: Date): string {
-  const then = new Date(takenAt);
-  const min = Math.max(0, Math.floor((now.getTime() - then.getTime()) / 60_000));
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
-  if (min < 48 * 60) return `${Math.floor(min / 60)} h ago`;
-  return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const hours = (now.getTime() - new Date(takenAt).getTime()) / 3600_000;
+  return hours < 48 ? timeAgo(takenAt, now) : new Date(takenAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /** "12 min ago", "5 h ago", "3 days ago": always relative. */

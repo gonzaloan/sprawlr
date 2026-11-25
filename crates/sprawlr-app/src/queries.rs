@@ -741,6 +741,15 @@ mod tests {
     }
 
     #[test]
+    fn changes_say_whether_they_are_known() {
+        let plain = demo();
+        assert!(!changes(&plain).known);
+        let with = crate::demo::snapshot();
+        let c = changes(&with);
+        assert!(c.known && c.headline.contains("1 new resource"), "{}", c.headline);
+    }
+
+    #[test]
     fn cleanup_find_apps_and_recommendations() {
         let s = demo();
         let c = cleanup(&s);

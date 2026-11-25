@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { changeRows, sinceLabel, timeAgo, type Changes, type Index } from "../../domain";
+import { sinceLabel, timeAgo, type Changes, type Index } from "../../domain";
 
 const SHOWN = 5;
 
 /** What changed since the previous scan, most telling first. Rows about a resource open it. */
 export function ChangesCard({ changes, ix, onNode }: { changes: Changes; ix: Index; onNode: (id: string) => void }) {
   const [all, setAll] = useState(false);
-  const rows = changeRows(changes);
+  const rows = changes.rows ?? [];
   if (!rows.length) {
     return (
       <section className="changes">

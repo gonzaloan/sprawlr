@@ -7,14 +7,16 @@ use sprawlr_domain::Snapshot;
 use std::path::{Component, Path, PathBuf};
 
 /// One JSON file holding the latest snapshot (the desktop app reopens on it), and a
-/// `history/` folder next to it with the last [`KEEP_SCANS`] full scans, to say what changed.
+/// `history/<account>/` folder next to it with each account's last [`KEEP_SCANS`] full scans,
+/// to say what changed.
 pub struct FileSnapshotStore {
     path: PathBuf,
 }
 
 /// Full scans kept in the history.
 pub const KEEP_SCANS: usize = 30;
-const STAMP: &str = "%Y%m%dT%H%M%S%.3fZ";
+/// Nanoseconds, so a file name gives back exactly the `taken_at` it was written for.
+const STAMP: &str = "%Y%m%dT%H%M%S%.9fZ";
 
 impl FileSnapshotStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
@@ -34,13 +36,19 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 }
 
 impl FileSnapshotStore {
-    fn history(&self) -> PathBuf {
-        self.path.parent().unwrap_or(Path::new(".")).join("history")
+    fn history(&self, account: &str) -> PathBuf {
+        // Account ids are digits; keep anything else out of the path.
+        let safe: String = account.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+        self.path.parent().unwrap_or(Path::new(".")).join("history").join(if safe.is_empty() { "unknown".into() } else { safe })
     }
 
-    fn file_for(&self, at: chrono::DateTime<chrono::Utc>) -> PathBuf {
-        self.history().join(format!("scan-{}.json", at.format(STAMP)))
+    fn file_for(&self, account: &str, at: chrono::DateTime<chrono::Utc>) -> PathBuf {
+        self.history(account).join(format!("scan-{}.json", at.format(STAMP)))
     }
+}
+
+fn account_of(s: &Snapshot) -> String {
+    s.nodes.iter().find_map(|n| n.account.clone()).unwrap_or_default()
 }
 
 impl SnapshotStore for FileSnapshotStore {
@@ -49,16 +57,17 @@ impl SnapshotStore for FileSnapshotStore {
     }
 
     fn record_scan(&self, snapshot: &Snapshot) -> anyhow::Result<()> {
-        write_atomic(&self.file_for(snapshot.taken_at), &serde_json::to_vec(snapshot)?)?;
-        let scans = self.scans()?;
+        let account = account_of(snapshot);
+        write_atomic(&self.file_for(&account, snapshot.taken_at), &serde_json::to_vec(snapshot)?)?;
+        let scans = self.scans(&account)?;
         for old in scans.iter().take(scans.len().saturating_sub(KEEP_SCANS)) {
-            let _ = std::fs::remove_file(self.file_for(*old));
+            let _ = std::fs::remove_file(self.file_for(&account, *old));
         }
         Ok(())
     }
 
-    fn scans(&self) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
-        let Ok(dir) = std::fs::read_dir(self.history()) else { return Ok(vec![]) };
+    fn scans(&self, account: &str) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
+        let Ok(dir) = std::fs::read_dir(self.history(account)) else { return Ok(vec![]) };
         let mut out: Vec<chrono::DateTime<chrono::Utc>> = dir
             .filter_map(|e| e.ok()?.file_name().into_string().ok())
             .filter_map(|n| n.strip_prefix("scan-")?.strip_suffix(".json").map(String::from))
@@ -69,8 +78,8 @@ impl SnapshotStore for FileSnapshotStore {
         Ok(out)
     }
 
-    fn scan(&self, taken_at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
-        match std::fs::read(self.file_for(taken_at)) {
+    fn scan(&self, account: &str, taken_at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
+        match std::fs::read(self.file_for(account, taken_at)) {
             Ok(raw) => Ok(Some(serde_json::from_slice(&raw)?)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
@@ -165,23 +174,32 @@ mod tests {
     }
 
     #[test]
-    fn history_keeps_the_last_scans_in_order() {
+    fn history_keeps_each_accounts_last_scans_exactly() {
         let dir = temp("history");
         let store = FileSnapshotStore::new(dir.join("last.json"));
-        assert!(store.scans().unwrap().is_empty());
         let mut g = demo_graph();
         infer(&mut g);
         let base = g.snapshot();
-        for i in 0..(KEEP_SCANS + 2) {
+        let acct = base.nodes.iter().find_map(|n| n.account.clone()).unwrap();
+        assert!(store.scans(&acct).unwrap().is_empty());
+
+        store.record_scan(&base).unwrap();
+        assert_eq!(store.scans(&acct).unwrap(), vec![base.taken_at], "the file name gives back the exact time");
+
+        for i in 1..(KEEP_SCANS + 2) {
             let mut s = base.clone();
             s.taken_at = base.taken_at + chrono::Duration::minutes(i as i64);
             store.record_scan(&s).unwrap();
         }
-        let scans = store.scans().unwrap();
+        let mut other = base.clone();
+        other.nodes.iter_mut().for_each(|n| n.account = Some("999".into()));
+        store.record_scan(&other).unwrap();
+
+        let scans = store.scans(&acct).unwrap();
         assert_eq!(scans.len(), KEEP_SCANS, "older scans are pruned");
         assert!(scans.windows(2).all(|w| w[0] < w[1]));
-        let newest = store.scan(*scans.last().unwrap()).unwrap().unwrap();
-        assert_eq!(newest.nodes.len(), base.nodes.len());
+        assert_eq!(store.scans("999").unwrap().len(), 1, "another account keeps its own history");
+        assert_eq!(store.scan(&acct, *scans.last().unwrap()).unwrap().unwrap().nodes.len(), base.nodes.len());
     }
 
     #[test]

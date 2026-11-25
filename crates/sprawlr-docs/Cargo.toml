@@ -12,3 +12,4 @@ serde_json = "1"
 
 [dev-dependencies]
 sprawlr-domain = { path = "../sprawlr-domain", features = ["fixtures"] }
+chrono = "0.4"

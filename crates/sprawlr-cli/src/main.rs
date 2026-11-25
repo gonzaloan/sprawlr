@@ -93,24 +93,9 @@ async fn main() -> anyhow::Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&c)?);
             } else {
-                println!("Since {}: {}", c.since.format("%Y-%m-%d %H:%M UTC"), c.headline());
-                for i in &c.added {
-                    println!("  + {} ({})", i.name, i.kind);
-                }
-                for i in &c.removed {
-                    println!("  - {} ({})", i.name, i.kind);
-                }
-                for x in &c.settings {
-                    println!("  ~ {}: {} {} -> {}", x.resource.name, x.label, x.before, x.after);
-                }
-                for f in &c.findings_new {
-                    println!("  ! {f}");
-                }
-                for f in &c.findings_resolved {
-                    println!("  ✓ {f}");
-                }
-                for e in &c.new_errors {
-                    println!("  ! new error: {e}");
+                println!("Since {}: {}", c.since.format("%Y-%m-%d %H:%M UTC"), c.summary);
+                for r in &c.rows {
+                    println!("  {}: {}", r.label, r.text);
                 }
             }
             Ok(())

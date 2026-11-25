@@ -26,9 +26,11 @@ pub fn earlier() -> sprawlr_domain::Snapshot {
     if let Some(n) = g.nodes_mut().find(|n| n.name.contains("InvoiceProcessor")) {
         n.attrs["timeout_s"] = serde_json::json!(5);
     }
-    if let Some(n) = g.nodes_mut().find(|n| n.name == "checkout-api") {
-        if let Some(a) = n.attrs.as_object_mut() {
-            a.remove("log_errors");
+    // The pool was fine: its logs were read, with no error lines (not "logs not read").
+    if let Some(n) = g.nodes_mut().find(|n| n.id.0.ends_with("service/prod-cluster/checkout-api")) {
+        if let Some(l) = n.attrs.get_mut("log_errors") {
+            l["patterns"] = serde_json::json!([]);
+            l["total"] = serde_json::json!(0.0);
         }
     }
     let mut s = analysed(g);

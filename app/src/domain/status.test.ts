@@ -43,13 +43,13 @@ describe("status", () => {
 });
 
 describe("changes", () => {
-  it("come with the demo snapshot, most telling first", async () => {
-    const { changeRows } = await import(".");
+  it("come with the demo snapshot, rows computed in Rust", async () => {
+    const { changesLine } = await import(".");
     const c = snap.changes!;
     expect(c.summary).toMatch(/^1 new resource, 1 removed, 1 setting changed/);
-    const rows = changeRows(c);
-    expect(rows[0].tag).toBe("attention");
-    expect(rows.find((r) => r.tag === "changed")?.text).toBe("InvoiceProcessor: Timeout (s) 5 → 60");
-    expect(rows.find((r) => r.tag === "new")?.id).toBe("arn:aws:s3:::reports-output");
+    expect(c.rows[0].tag).toBe("attention");
+    expect(c.rows.find((r) => r.tag === "changed")?.text).toBe("InvoiceProcessor: Timeout (s) 5 → 60");
+    expect(changesLine(snap)).toMatch(/^Since .+: 1 new resource, 1 removed/);
+    expect(changesLine({ ...snap, changes: { ...c, rows: [] } })).toBeNull();
   });
 });

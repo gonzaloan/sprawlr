@@ -6,8 +6,8 @@ import {
   isStale,
   logsNoteOf,
   monthlyCost,
+  changesLine,
   readAgo,
-  sinceLabel,
   statusOf,
   type Priority,
   type Snapshot,
@@ -147,11 +147,7 @@ export function TrayPopover() {
           </div>
         </section>
 
-        {snap.changes && snap.changes.summary !== "Nothing changed" && (
-          <p className="tray__changes small">
-            Since {sinceLabel(snap.changes)}: {snap.changes.summary.toLowerCase()}.
-          </p>
-        )}
+        {changesLine(snap) && <p className="tray__changes small">{changesLine(snap)}</p>}
 
         <div className="tray__scroll">
           {top.length > 0 && (

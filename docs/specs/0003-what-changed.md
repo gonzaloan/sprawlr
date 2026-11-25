@@ -42,11 +42,22 @@ Every scan and refresh says what changed since the previous scan of the same acc
   - the MCP tool `what_changed`;
   - `sprawlr changes`.
 
+## As built (after review)
+
+- **Only what both reads could see is compared.** That means resources in regions both scanned, and health and telemetry-based items only when both reads measured them. Error messages are compared only where logs were read both times. Connections count only as configured: traffic-only connections and third parties seen in traces come and go with traffic.
+- **Matched by id.** Connections are matched by (resource id, kind, resource id) and findings by (resource, rule), so copies with the same name in two environments stay apart. A placeholder that later gets scanned counts as new, not changed.
+- **Baselines.** A scan is compared with the newest kept scan of the same account. A refresh is compared with the scan its snapshot was already compared with, if any, so refreshing an older file never tells the story backwards.
+- **History** is kept per account (`history/<account>/scan-<time with nanoseconds>.json`), 30 scans each. A history error is a warning, never a failed scan.
+- **One list.** `Changes.rows` holds the rows in display order; the app, the tray, the docs and the CLI all print that one list.
+
 ## Acceptance criteria
 
 - [x] The same snapshot twice changes nothing ("Nothing changed").
 - [x] A new queue, a removed function, a resized function, an alarm and a new finding are each reported once, with labels.
 - [x] Snapshots of different accounts are not compared.
 - [x] The first scan has no changes; the second is compared with the first; a refresh after it is still compared with the first.
-- [x] History keeps 30 scans in order and prunes older ones.
+- [x] History keeps 30 scans per account, in order, and gives back exact times.
+- [x] Telemetry off, logs read for the first time, or another region added: none of these is reported as a change.
+- [x] Removing one of two same-named resources reports it once, with no stray connection changes.
+- [x] Another account scanned in between does not hide changes; refreshing an older file does not invent any.
 - [x] The demo reads "1 new resource, 1 removed, 1 setting changed, 1 new thing to look at, 1 new error message".

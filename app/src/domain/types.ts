@@ -92,6 +92,15 @@ export interface Changes {
   health: { resource: ChangeItem; before: Health; after: Health }[];
   new_errors: string[];
   cleanup_monthly: [number, number];
+  /** Every change, most telling first, in the words every view uses. */
+  rows: ChangeRow[];
+}
+
+export interface ChangeRow {
+  tag: "attention" | "error" | "health" | "new" | "removed" | "changed" | "connection" | "resolved";
+  label: string;
+  text: string;
+  id: string | null;
 }
 
 // ---- status.rs

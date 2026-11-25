@@ -48,17 +48,17 @@ pub trait SnapshotStore: Send + Sync {
     fn save(&self, snapshot: &Snapshot) -> anyhow::Result<()>;
     fn latest(&self) -> anyhow::Result<Option<Snapshot>>;
 
-    /// Keep a full scan in the history. Stores without history ignore it.
+    /// Keep a full scan in the history of its account. Stores without history ignore it.
     fn record_scan(&self, _snapshot: &Snapshot) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Full scans kept, oldest first.
-    fn scans(&self) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
+    /// When the kept full scans of an account were taken, oldest first.
+    fn scans(&self, _account: &str) -> anyhow::Result<Vec<chrono::DateTime<chrono::Utc>>> {
         Ok(vec![])
     }
 
-    fn scan(&self, _taken_at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
+    fn scan(&self, _account: &str, _taken_at: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Option<Snapshot>> {
         Ok(None)
     }
 }

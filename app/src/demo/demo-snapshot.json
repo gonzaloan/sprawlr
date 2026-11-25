@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-25T00:34:44.517467194Z",
+  "taken_at": "2026-11-25T00:48:28.465099155Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -2959,7 +2959,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:PutObject",
-          "seen_at": "2026-11-25T00:34:44.515122627Z"
+          "seen_at": "2026-11-25T00:48:28.462808309Z"
         }
       ]
     },
@@ -2972,7 +2972,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:GetObject",
-          "seen_at": "2026-11-25T00:34:44.515138031Z"
+          "seen_at": "2026-11-25T00:48:28.462822716Z"
         }
       ]
     },
@@ -2985,7 +2985,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: sqs:ReceiveMessage",
-          "seen_at": "2026-11-25T00:34:44.515140723Z"
+          "seen_at": "2026-11-25T00:48:28.462825688Z"
         }
       ]
     },
@@ -4192,7 +4192,7 @@
     "stale_after_hours": 24
   },
   "changes": {
-    "since": "2026-11-23T00:34:44.524189788Z",
+    "since": "2026-11-23T00:48:28.471668986Z",
     "summary": "1 new resource, 1 removed, 1 setting changed, 1 new thing to look at, 1 new error message",
     "added": [
       {
@@ -4240,6 +4240,38 @@
     "cleanup_monthly": [
       36.5,
       36.5
+    ],
+    "rows": [
+      {
+        "tag": "attention",
+        "label": "Needs attention",
+        "text": "checkout-order-events can be processed twice",
+        "id": null
+      },
+      {
+        "tag": "error",
+        "label": "New error",
+        "text": "checkout-api: pg: connection pool exhausted (max <n> connections), waited <n> ms",
+        "id": null
+      },
+      {
+        "tag": "new",
+        "label": "New",
+        "text": "reports-output (S3 bucket)",
+        "id": "arn:aws:s3:::reports-output"
+      },
+      {
+        "tag": "removed",
+        "label": "Removed",
+        "text": "batch-2023-sg (Security group)",
+        "id": null
+      },
+      {
+        "tag": "changed",
+        "label": "Changed",
+        "text": "InvoiceProcessor: Timeout (s) 5 → 60",
+        "id": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2"
+      }
     ]
   }
 }

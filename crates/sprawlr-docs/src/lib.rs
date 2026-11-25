@@ -31,36 +31,16 @@ pub fn render(snapshot: &sprawlr_domain::Snapshot) -> Vec<DocFile> {
     files
 }
 
-/// "Changes since 2026-11-22": what moved between two scans, in lists a reviewer can scan.
+/// "Changes since 2026-11-22": the same rows, in the same order, as the app shows.
 fn changes_section(c: &sprawlr_domain::changes::Changes) -> String {
-    let mut s = format!("## Changes since {}\n\n{}.\n\n", c.since.format("%Y-%m-%d %H:%M UTC"), c.headline());
-    let mut list = |title: &str, items: Vec<String>| {
-        if !items.is_empty() {
-            let _ = writeln!(s, "**{title}**\n");
-            for i in items {
-                let _ = writeln!(s, "- {i}");
-            }
-            s.push('\n');
-        }
-    };
-    list("New", c.added.iter().map(|i| format!("{} ({})", i.name, i.kind)).collect());
-    list("Removed", c.removed.iter().map(|i| format!("{} ({})", i.name, i.kind)).collect());
-    list("Settings", c.settings.iter().map(|x| format!("{}: {} {} → {}", x.resource.name, x.label, x.before, x.after)).collect());
-    list(
-        "Connections",
-        c.connections_added
-            .iter()
-            .map(|x| format!("new: {} {} {}", x.from, x.verb, x.to))
-            .chain(c.connections_removed.iter().map(|x| format!("gone: {} {} {}", x.from, x.verb, x.to)))
-            .collect(),
-    );
-    list("Needs attention now", c.attention_new.clone());
-    list("No longer needs attention", c.attention_resolved.clone());
-    list("New findings", c.findings_new.clone());
-    list("Resolved findings", c.findings_resolved.clone());
-    let health = |h: &sprawlr_domain::Health| serde_json::to_value(h).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    list("Health", c.health.iter().map(|h| format!("{}: {} → {}", h.resource.name, health(&h.before), health(&h.after))).collect());
-    list("New error messages", c.new_errors.iter().map(|e| format!("`{}`", e.replace('`', "'"))).collect());
+    let mut s = format!("## Changes since {}\n\n{}.\n\n", c.since.format("%Y-%m-%d %H:%M UTC"), c.summary);
+    for r in &c.rows {
+        let text = if r.tag == "error" { format!("`{}`", r.text.replace('`', "'")) } else { r.text.clone() };
+        let _ = writeln!(s, "- **{}**: {text}", r.label);
+    }
+    if !c.rows.is_empty() {
+        s.push('\n');
+    }
     s
 }
 
@@ -951,6 +931,23 @@ fn arrow_open(st: EvidenceKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn readme_tells_what_changed_when_known() {
+        let mut g = sprawlr_domain::fixtures::demo_graph();
+        sprawlr_domain::infer::infer(&mut g);
+        let mut snap = g.snapshot();
+        let mut earlier = snap.clone();
+        earlier.nodes.retain(|n| n.name != "reports-output");
+        earlier.taken_at -= chrono::Duration::days(2);
+        snap.changes = sprawlr_domain::changes::compare(&earlier, &snap);
+        let readme = render(&snap).into_iter().find(|f| f.path == "README.md").unwrap().content;
+        assert!(readme.contains("## Changes since "), "{readme}");
+        assert!(readme.contains("- **New**: reports-output (S3 bucket)"));
+        snap.changes = None;
+        let plain = render(&snap).into_iter().find(|f| f.path == "README.md").unwrap().content;
+        assert!(!plain.contains("## Changes since"));
+    }
     use super::*;
     use sprawlr_domain::analysis::findings;
     use sprawlr_domain::fixtures::demo_graph;

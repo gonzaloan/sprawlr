@@ -1,0 +1,18 @@
+[package]
+name = "sprawlr-mcp"
+description = "MCP driver: lets an agent ask sprawlr about the last scan (read-only)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sprawlr-mcp"
+path = "src/main.rs"
+
+[dependencies]
+sprawlr-domain = { path = "../sprawlr-domain", features = ["fixtures"] }
+sprawlr-app = { path = "../sprawlr-app", features = ["demo"] }
+sprawlr-fs = { path = "../sprawlr-fs" }
+serde = "1"
+serde_json = "1"
+anyhow = "1"

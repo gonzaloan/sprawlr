@@ -5265,6 +5265,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sprawlr-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sprawlr-app",
+ "sprawlr-domain",
+ "sprawlr-fs",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

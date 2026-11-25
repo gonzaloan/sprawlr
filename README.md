@@ -67,6 +67,30 @@ cargo run -p sprawlr-cli -- docs --snapshot snapshot.json --out architecture
 
 `aws-sdk-ec2` needs about 10 GB of RAM to compile. On smaller machines build with `--no-default-features` (VPC and security group scanning is skipped).
 
+## Ask an agent (MCP)
+
+`sprawlr-mcp` is a read-only [MCP](https://modelcontextprotocol.io) server over the last scan. An agent can ask what needs attention, what breaks if a database fails, why checkout is failing, or what can be cleaned up. Each answer comes with how sprawlr knows: configured, seen in traffic, or only allowed by IAM. It never calls AWS.
+
+```bash
+cargo install --path crates/sprawlr-mcp
+claude mcp add sprawlr -- sprawlr-mcp            # Claude Code; reads the desktop app's last scan
+claude mcp add sprawlr-demo -- sprawlr-mcp --demo # or try it on the demo account
+```
+
+For other clients, add `{"mcpServers": {"sprawlr": {"command": "sprawlr-mcp", "args": ["--snapshot", "/path/to/snapshot.json"]}}}`.
+
+| Tool | Answers |
+|---|---|
+| `account_status` | The level, headline and items that need attention; start here |
+| `list_apps`, `list_flows` | What the account is made of |
+| `explain_flow` | A flow step by step: who waits, what runs in the background, errors, recommendations |
+| `describe_resource` | Settings, health, error messages, connections with their evidence, findings |
+| `blast_radius` | What stops working if a resource fails |
+| `why_failing` | Where errors start and the most frequent messages |
+| `recommendations` | What to do, most important first |
+| `what_to_clean` | Idle, orphaned and zombie resources with their monthly cost |
+| `find_resources` | Exact names to ask about |
+
 ## Layout
 
 Hexagonal: a pure domain, use cases with ports, and adapters at the edges. See [docs/architecture.md](docs/architecture.md).
@@ -74,11 +98,12 @@ Hexagonal: a pure domain, use cases with ports, and adapters at the edges. See [
 | Path | What |
 |---|---|
 | `crates/sprawlr-domain` | The architecture graph and every rule: inference, findings, flows, capacity, cleanup, IAM reach, error patterns. No I/O |
-| `crates/sprawlr-app` | Ports (`InfraSource`, `HealthSource`, `ErrorLogSource`, `SnapshotStore`), use cases, the demo adapter |
+| `crates/sprawlr-app` | Ports, use cases (scan, refresh, background refresh), queries over a snapshot, the demo adapter |
 | `crates/sprawlr-aws` | AWS adapter: read-only discovery, relationship extractors, telemetry, error logs |
 | `crates/sprawlr-fs` | File adapter: snapshot store, documentation writer |
 | `crates/sprawlr-docs` | Markdown and Mermaid documentation |
 | `crates/sprawlr-cli` | `sprawlr scan` / `sprawlr docs` / `sprawlr demo` |
+| `crates/sprawlr-mcp` | MCP server over the last scan, for agents |
 | `app/` | Tauri 2 + React + React Flow + ELK desktop app (also runs as a web demo) |
 
 ## Contributing

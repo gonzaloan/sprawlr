@@ -7,7 +7,7 @@ flowchart LR
   subgraph drivers["Drivers (how a person asks)"]
     cli["sprawlr-cli"]
     desk["sprawlr-desktop (Tauri)"]
-    mcp["sprawlr-mcp (planned)"]
+    mcp["sprawlr-mcp"]
   end
   subgraph core["Core"]
     app["sprawlr-app\nuse cases + ports"]
@@ -42,7 +42,7 @@ Arrows point inwards. Each crate may depend only on what is listed:
 | `sprawlr-docs` | adapter (presentation) | `sprawlr-domain` | I/O |
 | `sprawlr-aws` | adapter (driven) | `sprawlr-app`, `sprawlr-domain`, AWS SDKs | `sprawlr-fs`, drivers |
 | `sprawlr-fs` | adapter (driven) | `sprawlr-app`, `sprawlr-docs`, `sprawlr-domain` | AWS SDKs |
-| `sprawlr-cli`, `app/src-tauri` | drivers | everything above | business rules (they wire, parse and print) |
+| `sprawlr-cli`, `sprawlr-mcp`, `app/src-tauri` | drivers | everything above | business rules (they wire, parse and print) |
 
 Cargo enforces most of this: a crate cannot use what it does not list. Reviews enforce the rest (no rules in drivers, no I/O in the domain).
 
@@ -66,6 +66,8 @@ Defined in `crates/sprawlr-app/src/ports.rs`.
 - `scan_account`: discover, then add IAM reach (`domain::iam`). Read health and error logs if asked. Infer apps and environments, analyse, and save.
 - `refresh_health`: same, from a snapshot, without rediscovering the structure. `RefreshOptions` says whether error logs are read again.
 - `refresh_in_background`: health only (never discovery or logs) for the stored scan, then at most one notification for what got worse, once a day per item.
+
+`queries` answers questions about a snapshot as plain data (status, apps, flows, a resource with its connections and evidence, blast radius, failures, recommendations, cleanup, search). The MCP server is a thin driver over it, and other drivers can reuse it.
 
 Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `sprawlr_fs::write_docs`.
 

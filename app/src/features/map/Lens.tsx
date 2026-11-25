@@ -1,4 +1,4 @@
-import { breakingAt, displayName, fmtX, type Index } from "../../domain";
+import { displayName, fmtX, nameList, whatIf, type Index } from "../../domain";
 import type { Insights } from "../../domain";
 
 export type LensKind = "health" | "load";
@@ -39,28 +39,29 @@ export function LensBar({ lens, onLens, factor, onFactor, permissions, onPermiss
 }
 
 /** Banner over the map: what breaks at the chosen traffic level. */
-export function WhatIfBanner({ ix, ins, factor }: { ix: Index; ins: Insights; factor: number }) {
-  const broken = breakingAt(ins, factor);
+export function WhatIfBanner({ ix, ins, factor, scope }: { ix: Index; ins: Insights; factor: number; scope: ReadonlySet<string> }) {
+  const { measured, broken, next } = whatIf(ins, factor, scope);
   const name = (id: string) => {
     const n = ix.byId.get(id);
     return n ? displayName(n) : id;
   };
-  const next = ins.capacity.find((c) => c.headroom !== null && c.headroom > factor);
   return (
     <div className={`whatif-banner${broken.length ? " is-bad" : ""}`} role="status">
-      {factor === 1 ? (
+      {measured === 0 ? (
+        <span>sprawlr has no load figures for anything on this map, so it can't say what breaks first. Use Refresh health with metrics included.</span>
+      ) : factor === 1 ? (
         <span>Bars show how close each resource is to its limit at today's busiest hour. Drag Traffic to see what breaks first.</span>
       ) : broken.length ? (
         <span>
-          At {factor.toFixed(1)}× traffic, <strong>{broken.map((c) => name(c.node)).join(", ")}</strong> {broken.length === 1 ? "is" : "are"} over the limit.
-          {next ? ` Next: ${name(next.node)} at ${fmtX(next.headroom!)}.` : ""}
+          At {factor.toFixed(1)}× traffic, <strong>{nameList(broken.map((c) => name(c.node)))}</strong> {broken.length === 1 ? "is" : "are"} over the limit.
+          {next ? ` Next: ${name(next.node)} at ${fmtX(next.headroom)}.` : ""}
         </span>
       ) : (
         <span>
-          At {factor.toFixed(1)}× traffic nothing measured hits its limit.{next ? ` First to break: ${name(next.node)} at ${fmtX(next.headroom!)}.` : ""}
+          At {factor.toFixed(1)}× traffic nothing measured hits its limit.{next ? ` First to break: ${name(next.node)} at ${fmtX(next.headroom)}.` : ""}
         </span>
       )}
-      <span className="muted small"> Assumes every part grows with traffic, one to one.</span>
+      {measured > 0 && <span className="muted small"> Assumes every part grows with traffic, one to one.</span>}
     </div>
   );
 }

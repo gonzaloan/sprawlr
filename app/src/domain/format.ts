@@ -17,3 +17,8 @@ export const fmtX = (h: number) => (h < 2 ? `${(Math.floor(h * 100) / 100).toFix
 export function fmtCount(v: number | null | undefined): string {
   return v === null || v === undefined ? "unknown" : fmtValue(v, "count");
 }
+
+/** "a", "a and b", "a, b and c". */
+export function nameList(names: string[]): string {
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}

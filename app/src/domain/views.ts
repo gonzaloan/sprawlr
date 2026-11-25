@@ -142,3 +142,20 @@ export function flowView(ix: Index, f: Flow): View {
   }
   return { nodes, edges, groups: [], direction: "DOWN" };
 }
+
+/**
+ * The resources a map covers, so a banner over it never names anything off the map. App blocks
+ * stand for their resources in the environment shown.
+ */
+export function mapScope(ix: Index, view: View, env: string | null): Set<string> {
+  const ids = new Set<string>();
+  for (const v of view.nodes) {
+    if (!v.id.startsWith("app:")) {
+      ids.add(v.id);
+      continue;
+    }
+    const app = v.id.slice(4);
+    ix.snap.nodes.filter((n) => n.app?.value === app && inEnv(n, env)).forEach((n) => ids.add(n.id));
+  }
+  return ids;
+}

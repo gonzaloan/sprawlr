@@ -18,9 +18,23 @@ export function projected(c: Capacity | undefined, factor: number): { util: numb
   return { util, state: util >= 1 ? "saturated" : util >= 0.7 ? "busy" : "ok" };
 }
 
-/** Resources that saturate at or below `factor`, in the order they break. */
-export function breakingAt(ins: Insights, factor: number): Capacity[] {
-  return ins.capacity.filter((c) => c.headroom !== null && c.headroom <= factor).sort((a, b) => (a.headroom ?? 0) - (b.headroom ?? 0));
+/** Capacity with a limit it can reach (headroom is null when measured idle). */
+export type Bounded = Capacity & { headroom: number };
+const bounded = (c: Capacity): c is Bounded => c.headroom !== null;
+
+/**
+ * Load of the resources in `scope`: how many have load figures at all, and those that can reach
+ * a limit, in the order they break. The headroom itself is computed in Rust.
+ */
+export function limitsIn(capacity: Iterable<Capacity>, scope: ReadonlySet<string>): { measured: number; order: Bounded[] } {
+  const here = [...capacity].filter((c) => scope.has(c.node));
+  return { measured: here.length, order: here.filter(bounded).sort((a, b) => a.headroom - b.headroom) };
+}
+
+/** What on a map breaks at a traffic multiplier, and what breaks next. */
+export function whatIf(ins: Insights, factor: number, scope: ReadonlySet<string>) {
+  const { measured, order } = limitsIn(ins.capacity, scope);
+  return { measured, broken: order.filter((c) => c.headroom <= factor), next: order.find((c) => c.headroom > factor) };
 }
 
 export function flowsThrough(ins: Insights, id: string): Flow[] {

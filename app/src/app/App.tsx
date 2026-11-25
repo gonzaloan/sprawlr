@@ -13,6 +13,7 @@ import {
   envs as envList,
   flowView,
   insightsOf,
+  mapScope,
   orphans,
   overview,
   projected,
@@ -122,6 +123,9 @@ export default function App() {
     if (place.kind === "flow" && flow) return flowView(ix, flow);
     return overview(ix, env, summaries, shared, permissions);
   }, [ix, place, env, summaries, shared, flow, permissions]);
+
+  // The what-if banner names only what is on the map shown.
+  const scope = useMemo(() => mapScope(ix, view, env), [ix, view, env]);
 
   // Load lens: utilisation at the chosen traffic level. Apps show their busiest resource.
   const loadOf = useMemo(() => {
@@ -316,7 +320,7 @@ export default function App() {
             onOpen={open}
             loadOf={loadOf}
           >
-            {lens === "load" && <WhatIfBanner ix={ix} ins={ins} factor={factor} />}
+            {lens === "load" && <WhatIfBanner ix={ix} ins={ins} factor={factor} scope={scope} />}
           </MapView>
         ) : (
           <div className="empty">

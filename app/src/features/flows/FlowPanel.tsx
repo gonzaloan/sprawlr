@@ -1,4 +1,4 @@
-import { displayName, hopVerb, fmtCount, fmtValue, fmtX, kindInfo, metricsOf, primaryMetric, type Index } from "../../domain";
+import { displayName, hopVerb, fmtCount, fmtValue, fmtX, kindInfo, limitsIn, metricsOf, primaryMetric, type Index } from "../../domain";
 import type { Capacity, Flow, Insight } from "../../domain";
 import { Spark } from "../../ui/Spark";
 
@@ -18,10 +18,7 @@ export function FlowPanel({ ix, flow, insights, capacity, onNode }: Props) {
   };
   const stages = Array.from({ length: flow.stages }, (_, s) => flow.hops.filter((h) => h.stage === s));
   const related = insights.filter((x) => x.flow === flow.id || x.nodes.some((n) => flow.nodes.includes(n)));
-  const weakest = flow.nodes
-    .map((id) => capacity.get(id))
-    .filter((c): c is Capacity => !!c && c.headroom !== null)
-    .sort((a, b) => a.headroom! - b.headroom!)[0];
+  const weakest = limitsIn(capacity.values(), new Set(flow.nodes)).order[0];
 
   const step = (id: string) => flow.nodes.indexOf(id) + 1;
 
@@ -54,7 +51,7 @@ export function FlowPanel({ ix, flow, insights, capacity, onNode }: Props) {
         </div>
         <div>
           <dt>Breaks at</dt>
-          <dd className={weakest && weakest.headroom! < 1.5 ? "is-bad" : undefined}>{weakest ? fmtX(weakest.headroom!) : "no limit seen"}</dd>
+          <dd className={weakest && weakest.headroom < 1.5 ? "is-bad" : undefined}>{weakest ? fmtX(weakest.headroom) : "no limit seen"}</dd>
         </div>
       </dl>
       {weakest && (

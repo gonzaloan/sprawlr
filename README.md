@@ -1,16 +1,24 @@
 # sprawlr
 
+[![CI](https://github.com/gonzaloan/sprawlr/actions/workflows/ci.yml/badge.svg)](https://github.com/gonzaloan/sprawlr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/gonzaloan/sprawlr)](https://github.com/gonzaloan/sprawlr/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 A local desktop map of your AWS account. It reads your infrastructure (read-only), works out which resources belong to which app and environment, and draws how they talk to each other.
 
 **[Try the demo in your browser](https://gonzaloan.github.io/sprawlr/)**: a fictional account, nothing to install. The [tray popover](https://gonzaloan.github.io/sprawlr/?view=tray) is there too. Scanning your own account needs the desktop app.
 
-![Whole account with what needs attention](docs/images/overview.png)
+![A tour of the demo account: the briefing, a flow under growing traffic, and the errors behind it](docs/images/tour.gif)
 
-![A flow under 1.5× traffic](docs/images/flow-whatif.png)
+## Why not the AWS console or the AWS CLI
+
+The AWS Management Console shows one service at a time, and the AWS CLI returns lists. Neither tells you that a CloudFront distribution, a load balancer, an ECS service, an Aurora database and the queues and functions behind them are one checkout flow, that the database saturates at 1.25× today's traffic, or that the flow's errors start with a Stripe timeout. sprawlr joins what those reads return into apps and flows, says what each connection rests on (traffic, configuration or only IAM), and keeps it on your machine.
 
 ## What it shows
 
 - **What needs attention**, first thing on screen: where errors start, what saturates first if traffic grows, queues that can lose or duplicate messages, dependencies many flows share. Each item says why and what to do.
+
+  ![Whole account with what needs attention](docs/images/overview.png)
 - **Flows**: the paths requests and events take, found from entry points (public endpoints, schedules) and told step by step: what answers the caller, then what happens later through queues and events. Each flow shows its runs, errors, wait time and where it breaks first.
 - **Why it fails**: with error logs on, sprawlr asks CloudWatch Logs Insights for the last 24 hours of error lines of every function and container it found, and reduces them to patterns (`Timeout calling https://api.stripe.com/v1/invoices after <n> ms`, 19 times). Numbers, ids, emails, addresses, tokens and quoted values are masked, and raw lines are never stored. Each flow lists its most frequent errors, and "Errors start at X" names the message to fix first. Off by default: Logs Insights reads log content and bills per GB scanned.
 
@@ -23,6 +31,8 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
   ![The tray popover on the demo account](docs/images/tray-popover.png)
 
 - **Bottlenecks and what-if**: every resource's busiest hour against its limit (database CPU, service CPU and memory, Lambda concurrency, API throttles). Drag the traffic slider to see what saturates at 1.5× or 3× and in which order.
+
+  ![A flow under 1.5× traffic](docs/images/flow-whatif.png)
 - **Resources you can't see inside**: an EC2 worker's code is out of sight, but its IAM role says what it can touch. sprawlr reads every role's policies (wildcards, `NotAction`, denies), turns specific grants into dotted "allowed by IAM" connections and follows them in flows when nothing else is known. An S3 upload that notifies a queue read by an EC2 worker becomes the flow "Files uploaded to reports-uploads". Grants on a whole service (`dynamodb:*` on `*`) are reported, never drawn as lines to everything.
 
   ![An EC2 worker mapped from its IAM role](docs/images/iam-mapped.png)
@@ -38,7 +48,7 @@ A local desktop map of your AWS account. It reads your infrastructure (read-only
 - **Blast radius**: select a resource to see everything that breaks if it fails.
 - **Documentation**: one Markdown page per app (diagrams per environment, components, data flows, network, secrets, differences between environments, findings) plus an account index. Mermaid diagrams render on GitHub, GitLab and most wikis. See [examples/demo-architecture](examples/demo-architecture/README.md).
 
-Secret values and data are never read. `iam-policy.json` grants only discovery calls and explicitly denies reading secrets, objects, items and messages. Telemetry uses `GetMetricData`, which CloudWatch bills (a few cents per scan); turn it off with `--no-telemetry` or the checkbox in the app. Error logs are the one exception to "never reads data": they are off unless you pass `--logs` or tick the box, need the separate `OptionalErrorLogs` statement in the policy (delete it to forbid them), and only masked patterns leave the query.
+Secret values and data are never read. `iam-policy.json` grants only discovery calls and explicitly denies reading secrets, objects, items and messages. Telemetry uses `GetMetricData`, which CloudWatch bills (a few cents per scan); turn it off with `--no-telemetry` or the checkbox in the app. Error logs are the one exception to "never reads data": they are off unless you pass `--logs` or tick the box, and they need the separate `OptionalErrorLogs` statement in the policy (delete it to forbid them). sprawlr masks the lines into patterns in memory and stores only the patterns.
 
 ## What it reads
 
@@ -123,6 +133,10 @@ Hexagonal: a pure domain, use cases with ports, and adapters at the edges. See [
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md). The rules for every change, for people and coding agents alike, are in [AGENTS.md](AGENTS.md). Decisions are in [docs/adr](docs/adr/) and feature specs in [docs/specs](docs/specs/).
 
+## Security
+
+sprawlr only reads, and keeps what it reads on your machine. See [SECURITY.md](SECURITY.md) for what it reads, what it stores and how to report a vulnerability.
+
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

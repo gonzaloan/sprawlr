@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react";
 import type { Snapshot } from "../domain";
 import demo from "../demo/demo-snapshot.json";
+import { freshen } from "../demo/freshen";
 import type { Backend } from "./backend";
 import { tauriBackend } from "./tauri";
 import { webBackend } from "./web";
@@ -10,8 +11,8 @@ import { webBackend } from "./web";
 export type { Backend, Every, RefreshState, ScanRequest, Settings, SettingsInput } from "./backend";
 export { download } from "./web";
 
-/** The fictional demo account every build ships with. */
-export const DEMO = demo as unknown as Snapshot;
+/** The fictional demo account every build ships with, read "a couple of minutes ago". */
+export const DEMO = freshen(demo as unknown as Snapshot, new Date());
 
 export const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 

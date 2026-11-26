@@ -83,14 +83,19 @@
       "Effect": "Deny",
       "Action": [
         "secretsmanager:GetSecretValue",
+        "secretsmanager:BatchGetSecretValue",
         "ssm:GetParameter",
         "ssm:GetParameters",
         "ssm:GetParametersByPath",
+        "ssm:GetParameterHistory",
         "kms:Decrypt",
         "s3:GetObject",
+        "s3:GetObjectVersion",
         "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
         "dynamodb:Query",
         "dynamodb:Scan",
+        "dynamodb:PartiQLSelect",
         "sqs:ReceiveMessage"
       ],
       "Resource": "*"

@@ -96,8 +96,9 @@ Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `s
 app/src/
   domain/      pure view logic over a snapshot (no React, no I/O), unit tested with vitest
   platform/    the Backend port and its adapters: tauri.ts (desktop), web.ts (browser demo)
-  features/    one folder per feature: map, flows, details, briefing, cleanup, docs, navigation, scan, tray
-  ui/          small shared components (Spark)
+  features/    one folder per feature: map, flows, details, briefing, cleanup, docs, navigation, scan, tray, changes
+  ui/          small shared components (Spark, Dot)
+  demo/        the bundled fictional account and freshen(), which keeps its read looking recent
   app/         the shell that composes features
 ```
 

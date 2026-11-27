@@ -1,9 +1,10 @@
 //! Command line driver: parses arguments, picks adapters, calls use cases, prints results.
 
 use clap::{Parser, Subcommand};
-use sprawlr_app::{demo::Demo, ports::Progress, scan_account, ScanOptions, ScanResult};
+use sprawlr_app::{demo::Demo, export_code, ports::Progress, scan_account, ScanOptions, ScanResult};
 use sprawlr_aws::Aws;
 use sprawlr_domain::{infer::infer, ArchGraph, Layer, Snapshot};
+use sprawlr_iac::Scope;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -57,6 +58,25 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Write Terraform and CloudFormation for the account or one app, from each resource's
+    /// configuration as it is now, with the documentation. Values that could be secrets are
+    /// never written: they become inputs.
+    Export {
+        #[arg(long, default_value = "snapshot.json")]
+        snapshot: String,
+        /// Only this app (defaults to the whole account)
+        #[arg(long)]
+        app: Option<String>,
+        /// Output folder
+        #[arg(long, default_value = "export")]
+        out: String,
+        /// AWS profile (defaults to the standard credential chain)
+        #[arg(long)]
+        profile: Option<String>,
+        /// Read the demo account's configuration instead of AWS
+        #[arg(long)]
+        demo: bool,
+    },
     /// Write the built-in demo account as a snapshot (no AWS needed)
     Demo {
         #[arg(long, default_value = "demo-snapshot.json")]
@@ -98,6 +118,30 @@ async fn main() -> anyhow::Result<()> {
                     println!("  {}: {}", r.label, r.text);
                 }
             }
+            Ok(())
+        }
+        Cmd::Export { snapshot, app, out, profile, demo } => {
+            let snap = sprawlr_fs::read_snapshot(Path::new(&snapshot))?;
+            let scope = app.map(Scope::App).unwrap_or(Scope::Account);
+            let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let e = if demo {
+                export_code(&Demo, &snap, &scope, &date, &progress).await?
+            } else {
+                export_code(&Aws::for_snapshot(profile, &snap), &snap, &scope, &date, &progress).await?
+            };
+            let n = sprawlr_fs::write_export(Path::new(&out), &e.files, &sprawlr_docs::render(&snap))?;
+            let noun = if e.summary.resources == 1 { "resource" } else { "resources" };
+            println!("{} {noun} of {} written to {out}/ ({n} files)", e.summary.resources, e.summary.title);
+            for i in &e.summary.inputs {
+                println!("  fill in: {} {} ({})", i.resource, i.value, i.why);
+            }
+            for l in &e.summary.left_out {
+                println!("  left out: {}: {}", l.name, l.reason);
+            }
+            for note in &e.summary.notes {
+                println!("  note: {note}");
+            }
+            println!("Check it: see {out}/README.md");
             Ok(())
         }
         Cmd::Demo { out } => {

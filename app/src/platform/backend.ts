@@ -1,6 +1,6 @@
 // The port between the UI and whatever runs sprawlr: the desktop app (Rust, through Tauri)
 // or the browser demo. Features depend on this interface, never on Tauri directly.
-import type { DocFile, ScanResult, Snapshot, Target } from "../domain";
+import type { DocFile, ExportSummary, ScanResult, Snapshot, Target } from "../domain";
 
 export interface ScanRequest {
   profile: string | null;
@@ -45,13 +45,35 @@ export interface Settings {
   notice: string | null;
 }
 
+export interface ExportRequest {
+  snapshot: Snapshot;
+  /** null: the whole account. */
+  app: string | null;
+  profile: string | null;
+  /** Read the demo account's configuration instead of AWS. */
+  demo: boolean;
+}
+
+export interface ExportResult {
+  dir: string;
+  summary: ExportSummary;
+}
+
 export type SettingsInput = Pick<Settings, "background" | "notifications" | "launch_at_login" | "close_to_tray">;
 
 type Unlisten = () => void;
 
 export interface Backend {
   /** What this backend can do; the UI hides what it cannot. */
-  readonly can: { scan: boolean; saveDocsToFolder: boolean; tray: boolean };
+  readonly can: {
+    scan: boolean;
+    saveDocsToFolder: boolean;
+    /** Export as code: reads each resource's configuration again and writes a folder. */
+    exportCode: boolean;
+    tray: boolean;
+    /** Back and Forward from the keyboard and mouse must be handled by the UI (a browser does it itself). */
+    historyKeys: boolean;
+  };
   /** Which window this UI is: the full app, or the tray popover. */
   view(): Promise<"main" | "tray">;
   listProfiles(): Promise<string[]>;
@@ -63,6 +85,10 @@ export interface Backend {
   renderDocs(snapshot: Snapshot): Promise<DocFile[] | null>;
   /** Asks for a folder and writes every page there. Resolves to the folder, or null if cancelled. */
   saveDocs(snapshot: Snapshot): Promise<string | null>;
+  /** Asks for a folder, reads each resource's configuration and writes the code there.
+   *  Resolves to the folder and what was written, or null if cancelled. */
+  exportCode(req: ExportRequest): Promise<ExportResult | null>;
+  onExportProgress(listener: (message: string) => void): Promise<Unlisten>;
   /** Progress messages while a scan runs. Returns a function that stops listening. */
   onProgress(listener: (message: string) => void): Promise<Unlisten>;
 

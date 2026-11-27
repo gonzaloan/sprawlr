@@ -1,6 +1,6 @@
 // Desktop adapter: every call goes to a Rust command (app/src-tauri/src/commands.rs).
-import type { DocFile, ScanResult, Snapshot, Target } from "../domain";
-import type { Backend, RefreshState, ScanRequest, Settings, SettingsInput } from "./backend";
+import type { DocFile, ExportSummary, ScanResult, Snapshot, Target } from "../domain";
+import type { Backend, ExportRequest, RefreshState, ScanRequest, Settings, SettingsInput } from "./backend";
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -13,7 +13,7 @@ async function on<T>(event: string, listener: (payload: T) => void) {
 }
 
 export const tauriBackend: Backend = {
-  can: { scan: true, saveDocsToFolder: true, tray: true },
+  can: { scan: true, saveDocsToFolder: true, exportCode: true, tray: true, historyKeys: true },
   async view() {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     return getCurrentWindow().label === "tray" ? "tray" : "main";
@@ -30,6 +30,14 @@ export const tauriBackend: Backend = {
     await call<number>("save_docs", { snapshot, dir });
     return dir;
   },
+  async exportCode(r: ExportRequest) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const dir = await open({ directory: true, multiple: false, title: "Export as code to" });
+    if (typeof dir !== "string") return null;
+    const summary = await call<ExportSummary>("export_code", { snapshot: r.snapshot, appName: r.app, profile: r.profile, demo: r.demo, dir });
+    return { dir, summary };
+  },
+  onExportProgress: (listener) => on<string>("export-progress", listener),
   onProgress: (listener) => on<string>("scan-progress", listener),
 
   refreshStored: () => call<void>("refresh_stored"),

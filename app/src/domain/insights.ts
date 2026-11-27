@@ -37,6 +37,9 @@ export function whatIf(ins: Insights, factor: number, scope: ReadonlySet<string>
   return { measured, broken: order.filter((c) => c.headroom <= factor), next: order.find((c) => c.headroom > factor) };
 }
 
+/** Whether the map has load figures to project traffic growth on. */
+export const projectable = (ins: Insights, scope: ReadonlySet<string>) => limitsIn(ins.capacity, scope).measured > 0;
+
 export function flowsThrough(ins: Insights, id: string): Flow[] {
   return ins.flows.filter((f) => f.nodes.includes(id));
 }

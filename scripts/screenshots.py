@@ -59,7 +59,7 @@ def tour(browser: Browser) -> None:
         page.wait_for_timeout(1800)
         side(page, "Web requests to checkout")
         page.wait_for_timeout(1200)
-        page.get_by_role("radio", name="Load", exact=True).click()
+        page.get_by_role("radio", name="Capacity", exact=True).click()
         for value in ["1.2", "1.4", "1.6", "1.8", "2"]:
             set_slider(page, value)
             page.wait_for_timeout(450)
@@ -92,7 +92,7 @@ def main() -> None:
         shoot(page, "overview.png")
 
         side(page, "Web requests to checkout")
-        page.get_by_role("radio", name="Load", exact=True).click()
+        page.get_by_role("radio", name="Capacity", exact=True).click()
         set_slider(page, "1.5")
         page.wait_for_timeout(800)
         shoot(page, "flow-whatif.png")

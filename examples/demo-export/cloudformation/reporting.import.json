@@ -1,0 +1,44 @@
+[
+  {
+    "LogicalResourceId": "ReportsWorker",
+    "ResourceIdentifier": {
+      "InstanceId": "i-0reports7a1"
+    },
+    "ResourceType": "AWS::EC2::Instance"
+  },
+  {
+    "LogicalResourceId": "ReportGenerator",
+    "ResourceIdentifier": {
+      "FunctionName": "report-generator"
+    },
+    "ResourceType": "AWS::Lambda::Function"
+  },
+  {
+    "LogicalResourceId": "ReportsOutput",
+    "ResourceIdentifier": {
+      "BucketName": "reports-output"
+    },
+    "ResourceType": "AWS::S3::Bucket"
+  },
+  {
+    "LogicalResourceId": "ReportsUploads",
+    "ResourceIdentifier": {
+      "BucketName": "reports-uploads"
+    },
+    "ResourceType": "AWS::S3::Bucket"
+  },
+  {
+    "LogicalResourceId": "ReportsJobs",
+    "ResourceIdentifier": {
+      "QueueUrl": "https://sqs.us-east-1.amazonaws.com/111122223333/reports-jobs"
+    },
+    "ResourceType": "AWS::SQS::Queue"
+  },
+  {
+    "LogicalResourceId": "ReportsJobsDlq",
+    "ResourceIdentifier": {
+      "QueueUrl": "https://sqs.us-east-1.amazonaws.com/111122223333/reports-jobs-dlq"
+    },
+    "ResourceType": "AWS::SQS::Queue"
+  }
+]

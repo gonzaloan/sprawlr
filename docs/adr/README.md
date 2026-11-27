@@ -9,5 +9,6 @@ Short records of decisions that shape the code, in the format: context, decision
 | [0003](0003-never-store-values.md) | Never store values that could be secrets or personal data | Accepted |
 | [0004](0004-snapshot-is-the-contract.md) | The snapshot is the contract between core and UI | Accepted |
 | [0005](0005-costly-reads-are-opt-in.md) | Reads that cost money are visible and optional | Accepted |
+| [0006](0006-exports-read-configuration-on-demand.md) | Exports read full configuration on demand and never store it | Accepted |
 
 New records use [template.md](template.md).

@@ -203,6 +203,34 @@ pub fn save_docs(snapshot: Snapshot, dir: String) -> Result<usize, String> {
     sprawlr_fs::write_docs(std::path::Path::new(&dir), &sprawlr_docs::render(&snapshot)).map_err(|e| format!("{e:#}"))
 }
 
+/// Terraform, CloudFormation and the documentation for the account or one app, written into
+/// `dir` from each resource's configuration as it is now (ADR 0006). The demo account is read
+/// from its fixture; any other snapshot from AWS with `profile`.
+#[tauri::command]
+pub async fn export_code(
+    app: AppHandle,
+    snapshot: Snapshot,
+    app_name: Option<String>,
+    profile: Option<String>,
+    demo: bool,
+    dir: String,
+) -> Result<sprawlr_iac::Summary, String> {
+    let scope = app_name.map(sprawlr_iac::Scope::App).unwrap_or(sprawlr_iac::Scope::Account);
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let emitter = app.clone();
+    let progress: Progress = std::sync::Arc::new(move |m: String| {
+        let _ = emitter.emit("export-progress", m);
+    });
+    let result = if demo {
+        sprawlr_app::export_code(&sprawlr_app::demo::Demo, &snapshot, &scope, &date, &progress).await
+    } else {
+        sprawlr_app::export_code(&Aws::for_snapshot(profile, &snapshot), &snapshot, &scope, &date, &progress).await
+    };
+    let export = result.map_err(|e| failed(&app, &e, true))?;
+    sprawlr_fs::write_export(std::path::Path::new(&dir), &export.files, &sprawlr_docs::render(&snapshot)).map_err(|e| format!("{e:#}"))?;
+    Ok(export.summary)
+}
+
 /// Settings as the popover shows them.
 #[derive(Debug, Serialize)]
 pub struct SettingsView {

@@ -1,0 +1,481 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The whole account: written by sprawlr on 2026-11-27 from the configuration of account 111122223333. Every resource is kept if it is removed from the stack.",
+  "Parameters": {
+    "LegacyExportJobCodeS3Bucket": {
+      "Description": "CodeS3Bucket of legacy-export-job: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "LegacyExportJobCodeS3Key": {
+      "Description": "CodeS3Key of legacy-export-job: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "CheckoutAlbSg": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "GroupDescription": "checkout-alb-sg security group",
+        "GroupName": "checkout-alb-sg",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "IpProtocol": "-1"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutApiSg": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "GroupDescription": "checkout-api-sg security group",
+        "GroupName": "checkout-api-sg",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "IpProtocol": "-1"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "FromPort": 8080,
+            "IpProtocol": "tcp",
+            "SourceSecurityGroupId": {
+              "Fn::GetAtt": [
+                "CheckoutAlbSg",
+                "GroupId"
+              ]
+            },
+            "ToPort": 8080
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CiDeploy2023": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+                },
+                "StringLike": {
+                  "token.actions.githubusercontent.com:sub": "repo:acme/storefront:*"
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Description": "Deploys from GitHub Actions",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AdministratorAccess"
+        ],
+        "MaxSessionDuration": 3600,
+        "Path": "/",
+        "RoleName": "ci-deploy-2023"
+      },
+      "Type": "AWS::IAM::Role",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "DataKey": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Description": "Encrypts checkout and reporting data",
+        "EnableKeyRotation": true,
+        "Enabled": true,
+        "KeyPolicy": {
+          "Id": "key-default-1",
+          "Statement": [
+            {
+              "Action": "kms:*",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::111122223333:root"
+              },
+              "Resource": "*",
+              "Sid": "Enable IAM User Permissions"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "KeySpec": "SYMMETRIC_DEFAULT",
+        "KeyUsage": "ENCRYPT_DECRYPT",
+        "MultiRegion": false
+      },
+      "Type": "AWS::KMS::Key",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "DevPrivateA": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": "us-east-1a",
+        "CidrBlock": "10.1.10.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "dev-private-a"
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "DevVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::Subnet",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "DevVpc": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "CidrBlock": "10.1.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "InstanceTenancy": "default",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "dev-vpc"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::VPC",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "EIP203011324": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Domain": "vpc"
+      },
+      "Type": "AWS::EC2::EIP",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "LegacyExportJob": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LegacyExportJobCodeS3Bucket"
+          },
+          "S3Key": {
+            "Ref": "LegacyExportJobCodeS3Key"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "EXPORT_BUCKET": "reports-output"
+          }
+        },
+        "FunctionName": "legacy-export-job",
+        "Handler": "index.handler",
+        "MemorySize": 1024,
+        "PackageType": "Zip",
+        "Role": "arn:aws:iam::111122223333:role/legacy-export-role",
+        "Runtime": "python3.9",
+        "Tags": [],
+        "Timeout": 30,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "Migration2024Sg": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "GroupDescription": "migration-2024-sg security group",
+        "GroupName": "migration-2024-sg",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "IpProtocol": "-1"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "10.0.0.0/16",
+            "FromPort": 5432,
+            "IpProtocol": "tcp",
+            "ToPort": 5432
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "NatLegacyDev": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AllocationId": "eipalloc-0nat",
+        "ConnectivityType": "public",
+        "SubnetId": {
+          "Fn::GetAtt": [
+            "DevPrivateA",
+            "SubnetId"
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "nat-legacy-dev"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::NatGateway",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "OrdersDbSg": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "GroupDescription": "orders-db-sg security group",
+        "GroupName": "orders-db-sg",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "IpProtocol": "-1"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "FromPort": 5432,
+            "IpProtocol": "tcp",
+            "SourceSecurityGroupId": {
+              "Fn::GetAtt": [
+                "CheckoutApiSg",
+                "GroupId"
+              ]
+            },
+            "ToPort": 5432
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "PlatformEvents": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Name": "platform-events"
+      },
+      "Type": "AWS::Events::EventBus",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProdPrivateA": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": "us-east-1a",
+        "CidrBlock": "10.0.10.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "prod-private-a"
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::Subnet",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProdPrivateB": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": "us-east-1b",
+        "CidrBlock": "10.0.11.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "prod-private-b"
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::Subnet",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProdPublicA": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": "us-east-1a",
+        "CidrBlock": "10.0.0.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "prod-public-a"
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::Subnet",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProdPublicB": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AvailabilityZone": "us-east-1b",
+        "CidrBlock": "10.0.1.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "prod-public-b"
+          }
+        ],
+        "VpcId": {
+          "Fn::GetAtt": [
+            "ProdVpc",
+            "VpcId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::Subnet",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProdVpc": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "InstanceTenancy": "default",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "prod-vpc"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::VPC",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsWorkerRole": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+        ],
+        "MaxSessionDuration": 3600,
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:ChangeMessageVisibility"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:sqs:us-east-1:111122223333:reports-jobs"
+                },
+                {
+                  "Action": "s3:GetObject",
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:s3:::reports-uploads/*"
+                },
+                {
+                  "Action": [
+                    "s3:PutObject",
+                    "s3:PutObjectAcl"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:s3:::reports-output/*"
+                },
+                {
+                  "Action": "dynamodb:*",
+                  "Effect": "Allow",
+                  "Resource": "*"
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "reports-worker-inline"
+          }
+        ],
+        "RoleName": "reports-worker-role"
+      },
+      "Type": "AWS::IAM::Role",
+      "UpdateReplacePolicy": "Retain"
+    }
+  }
+}

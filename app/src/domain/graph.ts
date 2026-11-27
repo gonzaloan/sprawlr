@@ -63,6 +63,24 @@ export function envs(ix: Index): string[] {
   return [...s].sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99 || a.localeCompare(b));
 }
 
+/**
+ * Environments worth switching between: only when some app runs in more than one of them, and
+ * only those apps run in. Otherwise a switch would only hide resources (a lone `test` role, a
+ * tagged `prod` site).
+ */
+export function envChoices(ix: Index): string[] {
+  const byApp = new Map<string, Set<string>>();
+  for (const n of ix.snap.nodes) {
+    if (!n.app || !n.env) continue;
+    const s = byApp.get(n.app.value) ?? new Set<string>();
+    s.add(envName(n.env.value));
+    byApp.set(n.app.value, s);
+  }
+  if (![...byApp.values()].some((s) => s.size > 1)) return [];
+  const used = new Set([...byApp.values()].flatMap((s) => [...s]));
+  return envs(ix).filter((e) => used.has(e));
+}
+
 export const inEnv = (n: ArchNode, env: string | null) => env === null || (n.env ? envName(n.env.value) === env : true);
 
 /** Resources the map shows: everything except account/region scaffolding and raw network plumbing. */

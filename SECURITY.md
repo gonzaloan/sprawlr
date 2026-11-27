@@ -22,6 +22,12 @@ sprawlr runs on your machine with your AWS credentials. It only reads from AWS, 
   - sprawlr masks numbers, ids, emails, addresses, tokens and quoted values, turning the lines into patterns in memory.
   - Only the patterns are stored, never the raw lines ([ADR 0003](docs/adr/0003-never-store-values.md)).
 
+- **Export as code**, only when you ask for it. sprawlr reads each resource's whole configuration again through Cloud Control, and each type's description (`cloudformation:DescribeType`). This needs the separate `OptionalExport` statement in the policy; delete it to forbid exports.
+  - The configuration stays in memory and goes only into the folder you pick, never into a snapshot ([ADR 0006](docs/adr/0006-exports-read-configuration-on-demand.md)).
+  - That folder holds what a snapshot does not: identifiers, network ranges, IAM and key policies with their conditions. Keep it where you keep code.
+  - Values that could be secrets or personal data are never written: environment variable values, values named like secrets, header values, user data, parameter values, email addresses and phone numbers. They become inputs you fill in.
+  - The deny above still holds: a resource whose read needs a denied action is left out, with AWS's message.
+
 sprawlr never calls an API that changes your resources or their settings. With error logs on, it starts Logs Insights queries and stops any that run longer than 90 seconds.
 
 ## What it stores
@@ -37,7 +43,7 @@ sprawlr never calls an API that changes your resources or their settings. With e
   - metric figures;
   - error patterns.
 
-  It holds no secret values, object contents, table items or queue messages. The app also writes exported docs to the folder you pick, and adds a login item if you turn on "Launch at login".
+  It holds no secret values, object contents, table items or queue messages. The app also writes exported docs and code to the folder you pick (an export replaces only the files of the previous export there), and adds a login item if you turn on "Launch at login".
 - **The CLI** writes `snapshot.json` or `architecture/` in the current folder unless you pass another path.
 - **The MCP server** writes nothing.
 - **Credentials** are read by the AWS SDK from your usual profile. sprawlr never stores them.
@@ -56,7 +62,7 @@ shasum -a 256 -c SHA256SUMS --ignore-missing   # macOS
 sha256sum -c --ignore-missing SHA256SUMS        # Linux
 ```
 
-They are not yet signed with a developer certificate.
+They are not yet signed with a developer certificate. The README's [Open it the first time](README.md#open-it-the-first-time) section says how to get past the macOS and Windows warnings.
 
 ## Reporting a vulnerability
 

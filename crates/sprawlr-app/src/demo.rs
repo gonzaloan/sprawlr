@@ -1,8 +1,10 @@
 //! In-memory adapter for the fictional demo account (`sprawlr_domain::fixtures`). It serves
 //! the same ports as a real account, so the demo exercises the same use cases.
 
-use crate::ports::{Discovered, ErrorLogSource, HealthSource, InfraSource, Progress, Warnings};
+use crate::demo_config;
+use crate::ports::{ConfigSource, Discovered, ErrorLogSource, HealthSource, InfraSource, Progress, Warnings};
 use sprawlr_domain::{fixtures::demo_graph, ArchGraph};
+use sprawlr_iac::{ConfigRead, NotRead, ResourceConfig, Wanted};
 
 /// The demo account analysed exactly as a scan would be (IAM reach, inference, analysis),
 /// with what changed since [`earlier`], for drivers that need a snapshot without running the
@@ -75,6 +77,34 @@ impl HealthSource for Demo {
 impl ErrorLogSource for Demo {
     async fn read_errors(&self, _: &mut ArchGraph, _: &Progress) -> anyhow::Result<Warnings> {
         Ok(vec![])
+    }
+}
+
+impl ConfigSource for Demo {
+    async fn read_configs(&self, wanted: &[Wanted], progress: &Progress) -> anyhow::Result<ConfigRead> {
+        progress("reading the demo account's configuration".into());
+        let g = demo_graph();
+        let schemas = demo_config::schemas();
+        let mut read = ConfigRead::default();
+        for w in wanted {
+            match g.node(&w.node).and_then(|n| demo_config::configuration(&g, n, &w.type_name)) {
+                Some(properties) => {
+                    if let Some(s) = schemas.get(&w.type_name) {
+                        read.schemas.insert(w.type_name.clone(), s.clone());
+                    }
+                    read.configs.push(ResourceConfig {
+                        node: w.node.clone(),
+                        type_name: w.type_name.clone(),
+                        identifier: w.identifier.clone(),
+                        properties,
+                    });
+                }
+                None => {
+                    read.not_read.push(NotRead { node: w.node.clone(), reason: "the demo account has no configuration for it.".into() })
+                }
+            }
+        }
+        Ok(read)
     }
 }
 

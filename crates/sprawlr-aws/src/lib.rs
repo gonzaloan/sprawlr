@@ -10,8 +10,10 @@
 
 pub mod apigw;
 pub mod cloudcontrol;
+pub mod config;
 pub mod extract;
 pub mod iam;
+pub mod kms;
 pub mod lambda;
 pub mod link;
 pub mod logs;
@@ -22,6 +24,8 @@ pub mod secrets;
 pub mod sns;
 pub mod tags;
 pub mod telemetry;
+#[cfg(test)]
+mod testing;
 
 use sprawlr_domain::{ArchGraph, EdgeKind, Evidence, EvidenceKind, Node, NodeId, NodeKind};
 use std::collections::BTreeMap;
@@ -38,6 +42,13 @@ pub struct Aws {
 
 impl Aws {
     pub fn new(profile: Option<String>, regions: Vec<String>) -> Self {
+        Aws { profile, regions }
+    }
+
+    /// The account of a snapshot, in the regions its resources are in (to read them again).
+    pub fn for_snapshot(profile: Option<String>, snapshot: &sprawlr_domain::Snapshot) -> Self {
+        let regions =
+            snapshot.nodes.iter().filter_map(|n| n.region.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         Aws { profile, regions }
     }
 

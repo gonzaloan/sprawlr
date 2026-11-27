@@ -1,5 +1,5 @@
 {
-  "taken_at": "2026-11-25T00:48:28.465099155Z",
+  "taken_at": "2026-11-27T14:52:25.199202Z",
   "nodes": [
     {
       "id": "account:111122223333",
@@ -1150,6 +1150,162 @@
       "health": "ok"
     },
     {
+      "id": "arn:aws:iam::111122223333:role/billing-invoice-role",
+      "kind": {
+        "type": "iam_role"
+      },
+      "name": "billing-invoice-role",
+      "account": "111122223333",
+      "region": "us-east-1",
+      "parent": "region:111122223333/us-east-1",
+      "aliases": [],
+      "app": {
+        "value": "billing",
+        "method": "stack",
+        "confidence": 0.8
+      },
+      "env": {
+        "value": "prod",
+        "method": "stack",
+        "confidence": 0.8
+      },
+      "tags": {
+        "aws:cloudformation:stack-name": "BillingStack-prod"
+      },
+      "attrs": {
+        "access": [
+          {
+            "actions": [
+              "dynamodb:PutItem",
+              "dynamodb:UpdateItem"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "write"
+            ],
+            "policies": [
+              "billing-invoice-policy"
+            ],
+            "service": "dynamodb",
+            "targets": [
+              "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC"
+            ]
+          },
+          {
+            "actions": [
+              "sqs:ReceiveMessage",
+              "sqs:DeleteMessage",
+              "sqs:GetQueueAttributes"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "read",
+              "write"
+            ],
+            "policies": [
+              "billing-invoice-policy"
+            ],
+            "service": "sqs",
+            "targets": [
+              "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+            ]
+          },
+          {
+            "actions": [
+              "events:PutEvents"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "write"
+            ],
+            "policies": [
+              "billing-invoice-policy"
+            ],
+            "service": "events",
+            "targets": [
+              "arn:aws:events:us-east-1:111122223333:event-bus/platform-events"
+            ]
+          }
+        ],
+        "aws_managed_policies": [
+          "AWSLambdaBasicExecutionRole"
+        ],
+        "created_days": 200,
+        "instance_profiles": [],
+        "last_used_days": 0,
+        "last_used_region": "us-east-1",
+        "policies": [
+          {
+            "name": "billing-invoice-policy",
+            "statements": [
+              {
+                "actions": [
+                  "dynamodb:PutItem",
+                  "dynamodb:UpdateItem"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC"
+                ]
+              },
+              {
+                "actions": [
+                  "sqs:ReceiveMessage",
+                  "sqs:DeleteMessage",
+                  "sqs:GetQueueAttributes"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+                ]
+              },
+              {
+                "actions": [
+                  "events:PutEvents"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:events:us-east-1:111122223333:event-bus/platform-events"
+                ]
+              }
+            ]
+          }
+        ],
+        "trust": [
+          {
+            "conditions": [],
+            "id": "lambda.amazonaws.com",
+            "kind": "service"
+          }
+        ]
+      },
+      "health": "unknown"
+    },
+    {
       "id": "arn:aws:iam::111122223333:role/checkout-api-task-role",
       "kind": {
         "type": "iam_role"
@@ -1159,11 +1315,169 @@
       "region": "us-east-1",
       "parent": "region:111122223333/us-east-1",
       "aliases": [],
-      "app": null,
+      "app": {
+        "value": "checkout",
+        "method": "naming",
+        "confidence": 0.6
+      },
       "env": null,
       "tags": {},
       "attrs": {
-        "placeholder": true
+        "access": [
+          {
+            "actions": [
+              "sqs:SendMessage"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "write"
+            ],
+            "policies": [
+              "checkout-api-task-policy"
+            ],
+            "service": "sqs",
+            "targets": [
+              "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+            ]
+          },
+          {
+            "actions": [
+              "sns:Publish"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "write"
+            ],
+            "policies": [
+              "checkout-api-task-policy"
+            ],
+            "service": "sns",
+            "targets": [
+              "arn:aws:sns:us-east-1:111122223333:checkout-notifications"
+            ]
+          },
+          {
+            "actions": [
+              "events:PutEvents"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "write"
+            ],
+            "policies": [
+              "checkout-api-task-policy"
+            ],
+            "service": "events",
+            "targets": [
+              "arn:aws:events:us-east-1:111122223333:event-bus/platform-events"
+            ]
+          },
+          {
+            "actions": [
+              "secretsmanager:GetSecretValue"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "read"
+            ],
+            "policies": [
+              "checkout-api-task-policy"
+            ],
+            "service": "secretsmanager",
+            "targets": [
+              "arn:aws:secretsmanager:us-east-1:111122223333:secret:checkout/prod/db-credentials-AbC123"
+            ]
+          }
+        ],
+        "aws_managed_policies": [],
+        "created_days": 300,
+        "instance_profiles": [],
+        "last_used_days": 0,
+        "last_used_region": "us-east-1",
+        "policies": [
+          {
+            "name": "checkout-api-task-policy",
+            "statements": [
+              {
+                "actions": [
+                  "sqs:SendMessage"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:sqs:us-east-1:111122223333:checkout-order-events"
+                ]
+              },
+              {
+                "actions": [
+                  "sns:Publish"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:sns:us-east-1:111122223333:checkout-notifications"
+                ]
+              },
+              {
+                "actions": [
+                  "events:PutEvents"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:events:us-east-1:111122223333:event-bus/platform-events"
+                ]
+              },
+              {
+                "actions": [
+                  "secretsmanager:GetSecretValue"
+                ],
+                "allow": true,
+                "conditional": false,
+                "not_actions": [],
+                "not_resources": [],
+                "resources": [
+                  "arn:aws:secretsmanager:us-east-1:111122223333:secret:checkout/prod/db-credentials-AbC123"
+                ]
+              }
+            ]
+          }
+        ],
+        "trust": [
+          {
+            "conditions": [
+              "aws:SourceAccount"
+            ],
+            "id": "ecs-tasks.amazonaws.com",
+            "kind": "service"
+          }
+        ]
       },
       "health": "unknown"
     },
@@ -1181,12 +1495,87 @@
       "env": null,
       "tags": {},
       "attrs": {
+        "access": [
+          {
+            "actions": [],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": true,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "full"
+            ],
+            "policies": [
+              "AdministratorAccess"
+            ],
+            "service": "*",
+            "targets": [
+              "arn:aws:apigateway:us-east-1::/restapis/a1b2c3search",
+              "arn:aws:cloudfront::111122223333:distribution/E2CHECKOUT",
+              "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC",
+              "arn:aws:ec2:us-east-1:111122223333:eip/eipalloc-0legacy",
+              "arn:aws:ec2:us-east-1:111122223333:instance/i-0reports7a1",
+              "arn:aws:ec2:us-east-1:111122223333:natgateway/nat-0legacy",
+              "arn:aws:ec2:us-east-1:111122223333:security-group/sg-alb",
+              "arn:aws:ec2:us-east-1:111122223333:security-group/sg-api",
+              "arn:aws:ec2:us-east-1:111122223333:security-group/sg-db",
+              "arn:aws:ec2:us-east-1:111122223333:security-group/sg-migration",
+              "arn:aws:ec2:us-east-1:111122223333:subnet/subnet-dev-a",
+              "arn:aws:ec2:us-east-1:111122223333:subnet/subnet-priv-a",
+              "arn:aws:ec2:us-east-1:111122223333:subnet/subnet-priv-b",
+              "arn:aws:ec2:us-east-1:111122223333:subnet/subnet-pub-a",
+              "arn:aws:ec2:us-east-1:111122223333:subnet/subnet-pub-b",
+              "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0a1prod",
+              "arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0b2dev",
+              "arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api",
+              "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api",
+              "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188",
+              "arn:aws:es:us-east-1:111122223333:domain/search-products",
+              "arn:aws:events:us-east-1:111122223333:event-bus/platform-events",
+              "arn:aws:iam::111122223333:role/billing-invoice-role",
+              "arn:aws:iam::111122223333:role/checkout-api-task-role",
+              "arn:aws:iam::111122223333:role/ci-deploy-2023",
+              "arn:aws:iam::111122223333:role/reports-worker-role",
+              "arn:aws:kms:us-east-1:111122223333:key/1f2e3d4c-data",
+              "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+              "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-PdfRenderer4B7C11-QW8",
+              "arn:aws:lambda:us-east-1:111122223333:function:checkout-email-sender",
+              "arn:aws:lambda:us-east-1:111122223333:function:legacy-export-job",
+              "arn:aws:lambda:us-east-1:111122223333:function:report-generator",
+              "arn:aws:lambda:us-east-1:111122223333:function:search-indexer",
+              "arn:aws:lambda:us-east-1:111122223333:function:search-query-handler",
+              "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db",
+              "arn:aws:rds:us-east-1:111122223333:cluster:checkout-orders-db-dev",
+              "arn:aws:s3:::billingstack-prod-invoicepdfs3c2b1a-9zz",
+              "arn:aws:s3:::reports-output",
+              "arn:aws:s3:::reports-uploads",
+              "arn:aws:secretsmanager:us-east-1:111122223333:secret:checkout/prod/db-credentials-AbC123",
+              "arn:aws:sns:us-east-1:111122223333:checkout-notifications",
+              "arn:aws:sqs:us-east-1:111122223333:checkout-order-events",
+              "arn:aws:sqs:us-east-1:111122223333:reports-jobs",
+              "arn:aws:sqs:us-east-1:111122223333:reports-jobs-dlq",
+              "arn:aws:states:us-east-1:111122223333:stateMachine:BillingStack-prod-MonthlyClose"
+            ]
+          }
+        ],
         "aws_managed_policies": [
           "AdministratorAccess"
         ],
         "created_days": 690,
         "last_used_days": 410,
-        "policies": []
+        "policies": [],
+        "trust": [
+          {
+            "conditions": [
+              "token.actions.githubusercontent.com:aud",
+              "token.actions.githubusercontent.com:sub"
+            ],
+            "id": "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com",
+            "kind": "federated"
+          }
+        ]
       },
       "health": "unknown"
     },
@@ -1204,6 +1593,97 @@
       "env": null,
       "tags": {},
       "attrs": {
+        "access": [
+          {
+            "actions": [
+              "sqs:ReceiveMessage",
+              "sqs:DeleteMessage",
+              "sqs:ChangeMessageVisibility"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "read",
+              "write"
+            ],
+            "policies": [
+              "reports-worker-inline"
+            ],
+            "service": "sqs",
+            "targets": [
+              "arn:aws:sqs:us-east-1:111122223333:reports-jobs"
+            ]
+          },
+          {
+            "actions": [
+              "s3:GetObject"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "read"
+            ],
+            "policies": [
+              "reports-worker-inline"
+            ],
+            "service": "s3",
+            "targets": [
+              "arn:aws:s3:::reports-uploads"
+            ]
+          },
+          {
+            "actions": [
+              "s3:PutObject",
+              "s3:PutObjectAcl"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": false,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "write",
+              "permissions"
+            ],
+            "policies": [
+              "reports-worker-inline"
+            ],
+            "service": "s3",
+            "targets": [
+              "arn:aws:s3:::reports-output"
+            ]
+          },
+          {
+            "actions": [
+              "dynamodb:*"
+            ],
+            "allow": true,
+            "conditional": false,
+            "elsewhere": [],
+            "everything": true,
+            "except_actions": [],
+            "except_resources": [],
+            "levels": [
+              "full"
+            ],
+            "policies": [
+              "reports-worker-inline"
+            ],
+            "service": "dynamodb",
+            "targets": [
+              "arn:aws:dynamodb:us-east-1:111122223333:table/BillingStack-prod-InvoicesTable7D1E0A-1ABC"
+            ]
+          }
+        ],
         "aws_managed_policies": [
           "CloudWatchAgentServerPolicy"
         ],
@@ -1212,6 +1692,7 @@
           "reports-worker-profile"
         ],
         "last_used_days": 0,
+        "last_used_region": "us-east-1",
         "policies": [
           {
             "name": "reports-worker-inline",
@@ -1268,6 +1749,13 @@
                 ]
               }
             ]
+          }
+        ],
+        "trust": [
+          {
+            "conditions": [],
+            "id": "ec2.amazonaws.com",
+            "kind": "service"
           }
         ]
       },
@@ -2959,7 +3447,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:PutObject",
-          "seen_at": "2026-11-25T00:48:28.462808309Z"
+          "seen_at": "2026-11-27T14:52:25.192691Z"
         }
       ]
     },
@@ -2972,7 +3460,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: s3:GetObject",
-          "seen_at": "2026-11-25T00:48:28.462822716Z"
+          "seen_at": "2026-11-27T14:52:25.192698Z"
         }
       ]
     },
@@ -2985,7 +3473,7 @@
           "kind": "permitted",
           "source": "iam:role/reports-worker-role",
           "detail": "reports-worker-inline: sqs:ReceiveMessage",
-          "seen_at": "2026-11-25T00:48:28.462825688Z"
+          "seen_at": "2026-11-27T14:52:25.192703Z"
         }
       ]
     },
@@ -3038,6 +3526,12 @@
           "source": "env:EVENT_BUS_NAME",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
+        },
+        {
+          "kind": "permitted",
+          "source": "iam:role/checkout-api-task-role",
+          "detail": "checkout-api-task-policy: events:PutEvents",
+          "seen_at": "2026-11-27T14:52:25.191032Z"
         }
       ]
     },
@@ -3089,6 +3583,12 @@
           "source": "ecs:task_definition.secrets",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
+        },
+        {
+          "kind": "permitted",
+          "source": "iam:role/checkout-api-task-role",
+          "detail": "checkout-api-task-policy: secretsmanager:GetSecretValue",
+          "seen_at": "2026-11-27T14:52:25.191142Z"
         }
       ]
     },
@@ -3102,6 +3602,12 @@
           "source": "env:NOTIFICATIONS_TOPIC_ARN",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
+        },
+        {
+          "kind": "permitted",
+          "source": "iam:role/checkout-api-task-role",
+          "detail": "checkout-api-task-policy: sns:Publish",
+          "seen_at": "2026-11-27T14:52:25.191152Z"
         }
       ]
     },
@@ -3156,7 +3662,7 @@
         },
         {
           "kind": "permitted",
-          "source": "iam:role/InvoiceProcessorRole",
+          "source": "iam:role/billing-invoice-role",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
         }
@@ -3169,7 +3675,20 @@
       "evidence": [
         {
           "kind": "permitted",
-          "source": "iam:role/InvoiceProcessorRole",
+          "source": "iam:role/billing-invoice-role",
+          "detail": null,
+          "seen_at": "2026-11-24T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "from": "arn:aws:lambda:us-east-1:111122223333:function:BillingStack-prod-InvoiceProcessor9F3A21-XK2",
+      "to": "arn:aws:iam::111122223333:role/billing-invoice-role",
+      "kind": "assumes_role",
+      "evidence": [
+        {
+          "kind": "declared",
+          "source": "lambda:role",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
         }
@@ -3191,6 +3710,12 @@
           "source": "cloudwatch:NumberOfMessagesReceived",
           "detail": null,
           "seen_at": "2026-11-24T12:00:00Z"
+        },
+        {
+          "kind": "permitted",
+          "source": "iam:role/billing-invoice-role",
+          "detail": "billing-invoice-policy: sqs:ReceiveMessage",
+          "seen_at": "2026-11-27T14:52:25.191905Z"
         }
       ]
     },
@@ -4192,7 +4717,7 @@
     "stale_after_hours": 24
   },
   "changes": {
-    "since": "2026-11-23T00:48:28.471668986Z",
+    "since": "2026-11-25T14:52:25.215188Z",
     "summary": "1 new resource, 1 removed, 1 setting changed, 1 new thing to look at, 1 new error message",
     "added": [
       {

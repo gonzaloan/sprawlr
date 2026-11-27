@@ -1,0 +1,129 @@
+[
+  {
+    "LogicalResourceId": "EIP203011324",
+    "ResourceIdentifier": {
+      "AllocationId": "eipalloc-0legacy",
+      "PublicIp": "203.0.113.24"
+    },
+    "ResourceType": "AWS::EC2::EIP"
+  },
+  {
+    "LogicalResourceId": "NatLegacyDev",
+    "ResourceIdentifier": {
+      "NatGatewayId": "nat-0legacy"
+    },
+    "ResourceType": "AWS::EC2::NatGateway"
+  },
+  {
+    "LogicalResourceId": "CheckoutAlbSg",
+    "ResourceIdentifier": {
+      "Id": "sg-alb"
+    },
+    "ResourceType": "AWS::EC2::SecurityGroup"
+  },
+  {
+    "LogicalResourceId": "CheckoutApiSg",
+    "ResourceIdentifier": {
+      "Id": "sg-api"
+    },
+    "ResourceType": "AWS::EC2::SecurityGroup"
+  },
+  {
+    "LogicalResourceId": "Migration2024Sg",
+    "ResourceIdentifier": {
+      "Id": "sg-migration"
+    },
+    "ResourceType": "AWS::EC2::SecurityGroup"
+  },
+  {
+    "LogicalResourceId": "OrdersDbSg",
+    "ResourceIdentifier": {
+      "Id": "sg-db"
+    },
+    "ResourceType": "AWS::EC2::SecurityGroup"
+  },
+  {
+    "LogicalResourceId": "DevPrivateA",
+    "ResourceIdentifier": {
+      "SubnetId": "subnet-dev-a"
+    },
+    "ResourceType": "AWS::EC2::Subnet"
+  },
+  {
+    "LogicalResourceId": "ProdPrivateA",
+    "ResourceIdentifier": {
+      "SubnetId": "subnet-priv-a"
+    },
+    "ResourceType": "AWS::EC2::Subnet"
+  },
+  {
+    "LogicalResourceId": "ProdPrivateB",
+    "ResourceIdentifier": {
+      "SubnetId": "subnet-priv-b"
+    },
+    "ResourceType": "AWS::EC2::Subnet"
+  },
+  {
+    "LogicalResourceId": "ProdPublicA",
+    "ResourceIdentifier": {
+      "SubnetId": "subnet-pub-a"
+    },
+    "ResourceType": "AWS::EC2::Subnet"
+  },
+  {
+    "LogicalResourceId": "ProdPublicB",
+    "ResourceIdentifier": {
+      "SubnetId": "subnet-pub-b"
+    },
+    "ResourceType": "AWS::EC2::Subnet"
+  },
+  {
+    "LogicalResourceId": "DevVpc",
+    "ResourceIdentifier": {
+      "VpcId": "vpc-0b2dev"
+    },
+    "ResourceType": "AWS::EC2::VPC"
+  },
+  {
+    "LogicalResourceId": "ProdVpc",
+    "ResourceIdentifier": {
+      "VpcId": "vpc-0a1prod"
+    },
+    "ResourceType": "AWS::EC2::VPC"
+  },
+  {
+    "LogicalResourceId": "PlatformEvents",
+    "ResourceIdentifier": {
+      "Name": "platform-events"
+    },
+    "ResourceType": "AWS::Events::EventBus"
+  },
+  {
+    "LogicalResourceId": "CiDeploy2023",
+    "ResourceIdentifier": {
+      "RoleName": "ci-deploy-2023"
+    },
+    "ResourceType": "AWS::IAM::Role"
+  },
+  {
+    "LogicalResourceId": "ReportsWorkerRole",
+    "ResourceIdentifier": {
+      "RoleName": "reports-worker-role"
+    },
+    "ResourceType": "AWS::IAM::Role"
+  },
+  {
+    "LogicalResourceId": "DataKey",
+    "ResourceIdentifier": {
+      "KeyId": "1f2e3d4c-data"
+    },
+    "ResourceType": "AWS::KMS::Key"
+  },
+  {
+    "LogicalResourceId": "LegacyExportJob",
+    "ResourceIdentifier": {
+      "FunctionName": "legacy-export-job"
+    },
+    "ResourceType": "AWS::Lambda::Function"
+  }
+]

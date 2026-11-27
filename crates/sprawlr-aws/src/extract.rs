@@ -20,9 +20,17 @@ pub struct Lookup {
     pub task_defs: HashMap<String, Value>,
     /// Elastic IP allocations used by NAT gateways (attached even if the EIP model says nothing).
     pub nat_allocations: BTreeSet<String>,
+    /// KMS key id → its aliases (`alias/orders-data`), sorted.
+    pub kms_aliases: HashMap<String, Vec<String>>,
 }
 
 impl Lookup {
+    pub fn learn_kms_alias(&mut self, alias: &str, key_id: &str) {
+        let aliases = self.kms_aliases.entry(key_id.to_string()).or_default();
+        aliases.push(alias.to_string());
+        aliases.sort();
+    }
+
     pub fn learn(&mut self, type_name: &str, p: &Value) {
         match type_name {
             "AWS::ElasticLoadBalancingV2::TargetGroup" => {
@@ -110,16 +118,27 @@ fn internet(to: &str, source: &str) -> PendingLink {
     declared("internet", Ref::Id(NodeId(to.into())), Some(EdgeKind::RoutesTo), source)
 }
 
-fn kms(from: &str, key: Option<&str>, source: &str) -> Option<PendingLink> {
-    let k = key?;
-    let to = if k.starts_with("arn:") {
-        Ref::Id(NodeId(k.into()))
-    } else if k.starts_with("alias/") {
-        return None;
-    } else {
-        Ref::Alias(k.into())
-    };
-    Some(declared(from, to, Some(EdgeKind::EncryptedWith), source))
+fn kms(ctx: &ScanContext, from: &str, key: Option<&str>, source: &str) -> Option<PendingLink> {
+    Some(declared(from, kms_ref(ctx, key?)?, Some(EdgeKind::EncryptedWith), source))
+}
+
+/// A KMS key as a resource names it: key id, key ARN, alias or alias ARN. An alias resolves
+/// within the resource's region, where its key is (`alias/aws/s3` exists in every region).
+/// AWS's default keys (`alias/aws/…`) are left out: every resource that picks no key of its
+/// own would point at one.
+pub(crate) fn kms_ref(ctx: &ScanContext, key: &str) -> Option<Ref> {
+    let alias = key.split_once(":alias/").map(|(_, a)| a).or_else(|| key.strip_prefix("alias/"));
+    match alias {
+        Some(a) if a.starts_with("aws/") => None,
+        Some(_) if key.starts_with("arn:") => Some(Ref::Alias(key.into())),
+        Some(a) => Some(Ref::Alias(kms_alias_arn(ctx, a))),
+        None if key.starts_with("arn:") => Some(Ref::Id(NodeId(key.into()))),
+        None => Some(Ref::Alias(key.into())),
+    }
+}
+
+fn kms_alias_arn(ctx: &ScanContext, alias: &str) -> String {
+    format!("arn:aws:kms:{}:{}:alias/{alias}", ctx.region, ctx.account)
 }
 
 fn sgs(ctx: &ScanContext, ids: Vec<String>) -> Vec<String> {
@@ -152,7 +171,7 @@ pub fn extract(ctx: &ScanContext, type_name: &str, ident: &str, p: &Value, lk: &
         "AWS::SQS::Queue" => sqs_queue(ctx, ident, p),
         "AWS::DynamoDB::Table" => dynamo(ctx, ident, p),
         "AWS::S3::Bucket" => bucket(ctx, ident, p),
-        "AWS::KMS::Key" => kms_key(ctx, ident, p),
+        "AWS::KMS::Key" => kms_key(ctx, ident, p, lk),
         "AWS::StepFunctions::StateMachine" => state_machine(ctx, p),
         "AWS::Events::EventBus" => event_bus(ctx, p),
         "AWS::Events::Rule" => event_rule(ctx, p),
@@ -381,7 +400,7 @@ fn rds_cluster(ctx: &ScanContext, ident: &str, p: &Value, lk: &Lookup) -> Extrac
         "security_groups": sgs(ctx, strs(p, "VpcSecurityGroupIds")),
         "subnet_group": s(p, "DBSubnetGroupName"),
     });
-    let links = kms(&arn, s(p, "KmsKeyId"), "rds:kms_key_id").into_iter().collect();
+    let links = kms(ctx, &arn, s(p, "KmsKeyId"), "rds:kms_key_id").into_iter().collect();
     Extracted { node: Some(n), links }
 }
 
@@ -407,7 +426,7 @@ fn rds_instance(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
         "security_groups": sgs(ctx, strs(p, "VPCSecurityGroups")),
         "subnet_group": s(p, "DBSubnetGroupName"),
     });
-    let links = kms(&arn, s(p, "KmsKeyId"), "rds:kms_key_id").into_iter().collect();
+    let links = kms(ctx, &arn, s(p, "KmsKeyId"), "rds:kms_key_id").into_iter().collect();
     Extracted { node: Some(n), links }
 }
 
@@ -422,7 +441,8 @@ fn dynamo(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
         "encrypted_with_cmk": p.pointer("/SSESpecification/KMSMasterKeyId").is_some(),
         "stream": p.pointer("/StreamSpecification/StreamViewType"),
     });
-    let links = kms(&arn, p.pointer("/SSESpecification/KMSMasterKeyId").and_then(|v| v.as_str()), "dynamodb:sse").into_iter().collect();
+    let links =
+        kms(ctx, &arn, p.pointer("/SSESpecification/KMSMasterKeyId").and_then(|v| v.as_str()), "dynamodb:sse").into_iter().collect();
     Extracted { node: Some(n), links }
 }
 
@@ -481,13 +501,24 @@ fn bucket(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
     Extracted { node: Some(n), links }
 }
 
-fn kms_key(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
+/// A key is named by its alias (`orders-data`, `aws/s3`) rather than its id, and found by its key
+/// id or alias ARNs, never by that short name. Keys behind an `alias/aws/…` are AWS managed:
+/// created by a service, with no monthly fee, and not yours to delete.
+fn kms_key(ctx: &ScanContext, ident: &str, p: &Value, lk: &Lookup) -> Extracted {
     let key_id = s(p, "KeyId").unwrap_or(ident);
     let arn = s(p, "Arn").map(String::from).unwrap_or_else(|| ctx.arn("kms", &format!("key/{key_id}")).0);
-    let name = s(p, "Description").filter(|d| d.len() <= 48).unwrap_or(key_id);
+    let aliases = lk.kms_aliases.get(key_id).map(Vec::as_slice).unwrap_or_default();
+    let aws_managed = aliases.iter().any(|a| a.starts_with("alias/aws/"));
+    let name =
+        aliases.first().map(|a| a.trim_start_matches("alias/")).or_else(|| s(p, "Description").filter(|d| d.len() <= 48)).unwrap_or(key_id);
     let mut n = node(ctx, &arn, NodeKind::KmsKey, name);
+    n.aliases.retain(|a| a != name);
     n.aliases.push(key_id.to_string());
+    n.aliases.extend(aliases.iter().map(|a| kms_alias_arn(ctx, a.trim_start_matches("alias/"))));
     n.attrs = json!({ "rotation_enabled": b(p, "EnableKeyRotation").unwrap_or(false), "usage": s(p, "KeyUsage") });
+    if aws_managed {
+        n.attrs["managed_by"] = json!("AWS");
+    }
     Extracted { node: Some(n), links: vec![] }
 }
 
@@ -497,7 +528,7 @@ fn sns_topic(ctx: &ScanContext, p: &Value) -> Extracted {
     let Some(arn) = s(p, "TopicArn") else { return Extracted::default() };
     let mut n = node(ctx, arn, NodeKind::SnsTopic, s(p, "TopicName").unwrap_or_else(|| last(arn)));
     n.attrs = json!({ "fifo": b(p, "FifoTopic").unwrap_or(false) });
-    let links = kms(arn, s(p, "KmsMasterKeyId"), "sns:kms_master_key").into_iter().collect();
+    let links = kms(ctx, arn, s(p, "KmsMasterKeyId"), "sns:kms_master_key").into_iter().collect();
     Extracted { node: Some(n), links }
 }
 
@@ -520,7 +551,7 @@ fn sqs_queue(ctx: &ScanContext, ident: &str, p: &Value) -> Extracted {
         "dead_letter_queue": dlq,
         "max_receive_count": redrive.get("maxReceiveCount"),
     });
-    let mut links: Vec<PendingLink> = kms(&arn, s(p, "KmsMasterKeyId"), "sqs:kms_master_key").into_iter().collect();
+    let mut links: Vec<PendingLink> = kms(ctx, &arn, s(p, "KmsMasterKeyId"), "sqs:kms_master_key").into_iter().collect();
     if let Some(d) = dlq {
         links.push(link(
             &arn,
@@ -757,6 +788,43 @@ mod tests {
 
     fn ids(links: &[PendingLink]) -> Vec<String> {
         links.iter().map(|l| format!("{} {:?} {:?}", l.from.0, l.kind, l.to)).collect()
+    }
+
+    #[test]
+    fn kms_keys_are_named_by_their_alias_and_aws_managed_ones_say_so() {
+        let mut lk = Lookup::default();
+        lk.learn_kms_alias("alias/orders-data", "k1");
+        lk.learn_kms_alias("alias/billing-data", "k1");
+        lk.learn_kms_alias("alias/aws/s3", "k2");
+        let own = extract(&ctx(), "AWS::KMS::Key", "k1", &json!({ "KeyId": "k1" }), &lk).node.unwrap();
+        assert_eq!(own.name, "billing-data", "the first alias in order");
+        assert!(own.aliases.contains(&"arn:aws:kms:us-east-1:123:alias/orders-data".to_string()));
+        assert!(!own.aliases.contains(&"billing-data".to_string()), "the short name is not a reference to the key");
+        assert!(own.attrs.get("managed_by").is_none());
+        let aws = extract(&ctx(), "AWS::KMS::Key", "k2", &json!({ "KeyId": "k2", "Description": "Default key" }), &lk).node.unwrap();
+        assert_eq!(aws.name, "aws/s3");
+        assert_eq!(aws.attrs["managed_by"], "AWS");
+        let bare = extract(&ctx(), "AWS::KMS::Key", "k3", &json!({ "KeyId": "k3", "Description": "Invoices" }), &lk).node.unwrap();
+        assert_eq!(bare.name, "Invoices", "with no alias, a short description names the key");
+    }
+
+    #[test]
+    fn a_key_referenced_by_its_alias_is_linked_in_the_same_region() {
+        let queue = |key: &str| {
+            let p = json!({ "Arn": "arn:aws:sqs:us-east-1:123:q", "KmsMasterKeyId": key });
+            ids(&extract(&ctx(), "AWS::SQS::Queue", "q", &p, &Lookup::default()).links)
+        };
+        let by_name = queue("alias/orders-data");
+        assert!(
+            by_name.iter().any(|l| l.contains("EncryptedWith") && l.contains("Alias(\"arn:aws:kms:us-east-1:123:alias/orders-data\")")),
+            "{by_name:?}"
+        );
+        let by_arn = queue("arn:aws:kms:us-east-1:123:alias/orders-data");
+        assert!(
+            by_arn.iter().any(|l| l.contains("Alias(\"arn:aws:kms:us-east-1:123:alias/orders-data\")")),
+            "an alias ARN is not a key id: {by_arn:?}"
+        );
+        assert!(queue("alias/aws/sqs").iter().all(|l| !l.contains("EncryptedWith")), "AWS's default keys are not drawn");
     }
 
     #[test]

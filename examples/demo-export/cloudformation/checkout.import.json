@@ -1,0 +1,81 @@
+[
+  {
+    "LogicalResourceId": "CheckoutCdn",
+    "ResourceIdentifier": {
+      "Id": "E2CHECKOUT"
+    },
+    "ResourceType": "AWS::CloudFront::Distribution"
+  },
+  {
+    "LogicalResourceId": "CheckoutApi",
+    "ResourceIdentifier": {
+      "Cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/dev-cluster",
+      "ServiceArn": "arn:aws:ecs:us-east-1:111122223333:service/dev-cluster/checkout-api"
+    },
+    "ResourceType": "AWS::ECS::Service"
+  },
+  {
+    "LogicalResourceId": "CheckoutApi2",
+    "ResourceIdentifier": {
+      "Cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/prod-cluster",
+      "ServiceArn": "arn:aws:ecs:us-east-1:111122223333:service/prod-cluster/checkout-api"
+    },
+    "ResourceType": "AWS::ECS::Service"
+  },
+  {
+    "LogicalResourceId": "CheckoutAlb",
+    "ResourceIdentifier": {
+      "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/checkout-alb/50dc6c495c0c9188"
+    },
+    "ResourceType": "AWS::ElasticLoadBalancingV2::LoadBalancer"
+  },
+  {
+    "LogicalResourceId": "CheckoutApiTaskRole",
+    "ResourceIdentifier": {
+      "RoleName": "checkout-api-task-role"
+    },
+    "ResourceType": "AWS::IAM::Role"
+  },
+  {
+    "LogicalResourceId": "CheckoutEmailSender",
+    "ResourceIdentifier": {
+      "FunctionName": "checkout-email-sender"
+    },
+    "ResourceType": "AWS::Lambda::Function"
+  },
+  {
+    "LogicalResourceId": "CheckoutOrdersDb",
+    "ResourceIdentifier": {
+      "DBClusterIdentifier": "checkout-orders-db"
+    },
+    "ResourceType": "AWS::RDS::DBCluster"
+  },
+  {
+    "LogicalResourceId": "CheckoutOrdersDbDev",
+    "ResourceIdentifier": {
+      "DBClusterIdentifier": "checkout-orders-db-dev"
+    },
+    "ResourceType": "AWS::RDS::DBCluster"
+  },
+  {
+    "LogicalResourceId": "CheckoutNotifications",
+    "ResourceIdentifier": {
+      "TopicArn": "arn:aws:sns:us-east-1:111122223333:checkout-notifications"
+    },
+    "ResourceType": "AWS::SNS::Topic"
+  },
+  {
+    "LogicalResourceId": "CheckoutOrderEvents",
+    "ResourceIdentifier": {
+      "QueueUrl": "https://sqs.us-east-1.amazonaws.com/111122223333/checkout-order-events"
+    },
+    "ResourceType": "AWS::SQS::Queue"
+  },
+  {
+    "LogicalResourceId": "CheckoutProdDbCredentials",
+    "ResourceIdentifier": {
+      "Id": "arn:aws:secretsmanager:us-east-1:111122223333:secret:checkout/prod/db-credentials-AbC123"
+    },
+    "ResourceType": "AWS::SecretsManager::Secret"
+  }
+]

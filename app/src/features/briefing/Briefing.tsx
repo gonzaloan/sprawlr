@@ -42,7 +42,7 @@ export function Briefing({ ix, ins, changes, onNode, onFlow, onCleanup, onWhatIf
           <strong>
             {name(first.node)} at {fmtX(first.headroom!)} today's traffic
           </strong>
-          <span className="muted">{first.basis}. Try the traffic slider to see what follows.</span>
+          <span className="muted">{first.basis}. Open it to see what runs out next as traffic grows.</span>
         </button>
       )}
 

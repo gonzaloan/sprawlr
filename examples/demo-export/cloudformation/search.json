@@ -1,0 +1,184 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The whole account: written by sprawlr on 2026-11-27 from the configuration of account 111122223333. Every resource is kept if it is removed from the stack.",
+  "Parameters": {
+    "SearchIndexerCodeS3Bucket": {
+      "Description": "CodeS3Bucket of search-indexer: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "SearchIndexerCodeS3Key": {
+      "Description": "CodeS3Key of search-indexer: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "SearchIndexerIndexName": {
+      "Description": "Value of the environment variable INDEX_NAME of search-indexer. sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    },
+    "SearchIndexerOpensearchEndpoint": {
+      "Description": "Value of the environment variable OPENSEARCH_ENDPOINT of search-indexer. sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    },
+    "SearchQueryHandlerCodeS3Bucket": {
+      "Description": "CodeS3Bucket of search-query-handler: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "SearchQueryHandlerCodeS3Key": {
+      "Description": "CodeS3Key of search-query-handler: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "SearchQueryHandlerOpensearchEndpoint": {
+      "Description": "Value of the environment variable OPENSEARCH_ENDPOINT of search-query-handler. sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "SearchIndexer": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Ref": "SearchIndexerCodeS3Bucket"
+          },
+          "S3Key": {
+            "Ref": "SearchIndexerCodeS3Key"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "INDEX_NAME": {
+              "Ref": "SearchIndexerIndexName"
+            },
+            "OPENSEARCH_ENDPOINT": {
+              "Ref": "SearchIndexerOpensearchEndpoint"
+            }
+          }
+        },
+        "FunctionName": "search-indexer",
+        "Handler": "com.acme.Handler::handleRequest",
+        "MemorySize": 2048,
+        "PackageType": "Zip",
+        "Role": "arn:aws:iam::111122223333:role/search-lambda-role",
+        "Runtime": "java21",
+        "Tags": [],
+        "Timeout": 30,
+        "TracingConfig": {
+          "Mode": "Active"
+        },
+        "VpcConfig": {
+          "SecurityGroupIds": [
+            "sg-api"
+          ],
+          "SubnetIds": [
+            "subnet-priv-a",
+            "subnet-priv-b"
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Function",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SearchProducts": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "ClusterConfig": {
+          "InstanceCount": 3,
+          "InstanceType": "r6g.large.search",
+          "ZoneAwarenessConfig": {
+            "AvailabilityZoneCount": 2
+          },
+          "ZoneAwarenessEnabled": true
+        },
+        "DomainName": "search-products",
+        "EBSOptions": {
+          "EBSEnabled": true,
+          "VolumeSize": 100,
+          "VolumeType": "gp3"
+        },
+        "EncryptionAtRestOptions": {
+          "Enabled": true,
+          "KmsKeyId": "1f2e3d4c-data"
+        },
+        "EngineVersion": "OpenSearch_2.17",
+        "NodeToNodeEncryptionOptions": {
+          "Enabled": true
+        },
+        "VPCOptions": {
+          "SecurityGroupIds": [
+            "sg-api"
+          ],
+          "SubnetIds": [
+            "subnet-priv-a",
+            "subnet-priv-b"
+          ]
+        }
+      },
+      "Type": "AWS::OpenSearchService::Domain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SearchPublicApi": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Description": "Public product search",
+        "EndpointConfiguration": {
+          "Types": [
+            "REGIONAL"
+          ]
+        },
+        "Name": "search-public-api"
+      },
+      "Type": "AWS::ApiGateway::RestApi",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "SearchQueryHandler": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Ref": "SearchQueryHandlerCodeS3Bucket"
+          },
+          "S3Key": {
+            "Ref": "SearchQueryHandlerCodeS3Key"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "OPENSEARCH_ENDPOINT": {
+              "Ref": "SearchQueryHandlerOpensearchEndpoint"
+            }
+          }
+        },
+        "FunctionName": "search-query-handler",
+        "Handler": "com.acme.Handler::handleRequest",
+        "MemorySize": 1024,
+        "PackageType": "Zip",
+        "Role": "arn:aws:iam::111122223333:role/search-lambda-role",
+        "Runtime": "java21",
+        "Tags": [],
+        "Timeout": 30,
+        "TracingConfig": {
+          "Mode": "Active"
+        },
+        "VpcConfig": {
+          "SecurityGroupIds": [
+            "sg-api"
+          ],
+          "SubnetIds": [
+            "subnet-priv-a",
+            "subnet-priv-b"
+          ]
+        }
+      },
+      "Type": "AWS::Lambda::Function",
+      "UpdateReplacePolicy": "Retain"
+    }
+  }
+}

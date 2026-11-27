@@ -1,9 +1,10 @@
 //! File-system adapters: the snapshot store, the desktop settings, and writing documentation
-//! pages into a folder.
+//! pages and exports into a folder.
 
 use sprawlr_app::{DesktopSettings, SettingsStore, SnapshotStore};
 use sprawlr_docs::DocFile;
 use sprawlr_domain::Snapshot;
+use sprawlr_iac::CodeFile;
 use std::path::{Component, Path, PathBuf};
 
 /// One JSON file holding the latest snapshot (the desktop app reopens on it), and a
@@ -141,12 +142,68 @@ pub fn read_snapshot(path: &Path) -> anyhow::Result<Snapshot> {
 /// could leave the folder is refused anyway. Returns the number of pages written.
 pub fn write_docs(root: &Path, files: &[DocFile]) -> anyhow::Result<usize> {
     anyhow::ensure!(root.is_dir(), "{} is not a folder", root.display());
-    for f in files {
-        let rel = Path::new(&f.path);
-        anyhow::ensure!(!rel.is_absolute() && rel.components().all(|c| matches!(c, Component::Normal(_))), "refusing to write {}", f.path);
+    write_all(root, files.iter().map(|f| (f.path.as_str(), f.content.as_str())).collect())
+}
+
+/// What the last export wrote into a folder, one path per line, so the next export replaces
+/// exactly that and nothing the person added (their `terraform.tfvars`, Terraform's state).
+pub const EXPORT_MANIFEST: &str = ".sprawlr-export";
+
+/// Write an export into `root`, created if missing: its code, and the documentation under
+/// `docs/`. `root` must be empty or hold an earlier export; files that export wrote and this
+/// one doesn't are removed. Returns the number of files written.
+pub fn write_export(root: &Path, code: &[CodeFile], docs: &[DocFile]) -> anyhow::Result<usize> {
+    std::fs::create_dir_all(root).map_err(|e| anyhow::anyhow!("{}: {e}", root.display()))?;
+    let previous = match std::fs::read_to_string(root.join(EXPORT_MANIFEST)) {
+        Ok(text) => Some(text.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).map(String::from).collect::<Vec<_>>()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
+    let empty = std::fs::read_dir(root)?.next().is_none();
+    anyhow::ensure!(
+        empty || previous.is_some(),
+        "{} already has files sprawlr did not write. Pick an empty folder, or the folder of an earlier export",
+        root.display()
+    );
+    let docs: Vec<(String, &str)> = docs.iter().map(|d| (format!("docs/{}", d.path), d.content.as_str())).collect();
+    let mut files: Vec<(&str, &str)> = code.iter().map(|f| (f.path.as_str(), f.content.as_str())).collect();
+    files.extend(docs.iter().map(|(p, c)| (p.as_str(), *c)));
+    let n = write_all(root, files.clone())?;
+
+    let written: std::collections::BTreeSet<&str> = files.iter().map(|(p, _)| *p).collect();
+    for old in previous.iter().flatten().filter(|p| !written.contains(p.as_str()) && inside(p)) {
+        let path = root.join(old);
+        let _ = std::fs::remove_file(&path);
+        // A folder the export no longer writes into goes too, if nothing else is in it.
+        if let Some(dir) = path.parent().filter(|d| *d != root) {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+    let manifest = std::iter::once(
+        "# Files sprawlr wrote in its last export here. The next export replaces them and touches nothing else.".to_string(),
+    )
+    .chain(written.iter().map(|p| p.to_string()))
+    .collect::<Vec<_>>()
+    .join("\n");
+    std::fs::write(root.join(EXPORT_MANIFEST), manifest + "\n")?;
+    Ok(n)
+}
+
+/// A relative path that stays inside the folder.
+fn inside(path: &str) -> bool {
+    let rel = Path::new(path);
+    !rel.is_absolute() && rel.components().all(|c| matches!(c, Component::Normal(_)))
+}
+
+/// Every path is checked before the first file is written, so a bad one leaves nothing behind.
+fn write_all(root: &Path, files: Vec<(&str, &str)>) -> anyhow::Result<usize> {
+    for (path, _) in &files {
+        anyhow::ensure!(inside(path), "refusing to write {path}");
+    }
+    for (rel, content) in &files {
         let path = root.join(rel);
         std::fs::create_dir_all(path.parent().unwrap_or(root))?;
-        std::fs::write(&path, &f.content).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+        std::fs::write(&path, content).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
     }
     Ok(files.len())
 }
@@ -229,5 +286,42 @@ mod tests {
         assert!(dir.join("apps/checkout.md").exists());
         let evil = vec![DocFile { path: "../escape.md".into(), title: "x".into(), content: "x".into() }];
         assert!(write_docs(&dir, &evil).is_err());
+    }
+
+    #[test]
+    fn an_export_writes_its_code_and_the_docs_and_refuses_a_path_that_leaves_the_folder() {
+        let dir = temp("export").join("new-folder");
+        let code = vec![CodeFile { path: "terraform/checkout.tf".into(), content: "# x\n".into() }];
+        let docs = vec![DocFile { path: "README.md".into(), title: "x".into(), content: "# docs\n".into() }];
+        assert_eq!(write_export(&dir, &code, &docs).unwrap(), 2);
+        assert!(dir.join("terraform/checkout.tf").exists() && dir.join("docs/README.md").exists());
+
+        let evil =
+            vec![CodeFile { path: "ok.tf".into(), content: "x".into() }, CodeFile { path: "../escape.tf".into(), content: "x".into() }];
+        assert!(write_export(&dir, &evil, &[]).is_err());
+        assert!(!dir.join("ok.tf").exists(), "nothing is written when one path is refused");
+    }
+
+    #[test]
+    fn an_export_never_writes_over_a_folder_it_did_not_write() {
+        let dir = temp("export-foreign");
+        std::fs::write(dir.join("README.md"), "the person's own").unwrap();
+        let code = vec![CodeFile { path: "README.md".into(), content: "# Code\n".into() }];
+        assert!(write_export(&dir, &code, &[]).unwrap_err().to_string().contains("Pick an empty folder"));
+        assert_eq!(std::fs::read_to_string(dir.join("README.md")).unwrap(), "the person's own");
+    }
+
+    #[test]
+    fn exporting_again_replaces_what_the_last_export_wrote_and_nothing_else() {
+        let dir = temp("export-again").join("out");
+        let file = |p: &str| CodeFile { path: p.into(), content: "x\n".into() };
+        write_export(&dir, &[file("terraform/shared.tf"), file("terraform/checkout.tf"), file("cloudformation/shared.json")], &[]).unwrap();
+        std::fs::write(dir.join("terraform/terraform.tfvars"), "secret = \"kept\"").unwrap();
+
+        write_export(&dir, &[file("terraform/checkout.tf")], &[]).unwrap();
+        assert!(dir.join("terraform/checkout.tf").exists());
+        assert!(!dir.join("terraform/shared.tf").exists(), "a file only the last export had is removed");
+        assert!(!dir.join("cloudformation").exists(), "and its folder, once empty");
+        assert!(dir.join("terraform/terraform.tfvars").exists(), "what the person added stays");
     }
 }

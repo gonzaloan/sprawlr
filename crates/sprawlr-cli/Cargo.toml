@@ -15,6 +15,8 @@ sprawlr-app = { path = "../sprawlr-app", features = ["demo"] }
 sprawlr-aws = { path = "../sprawlr-aws", default-features = false }
 sprawlr-docs = { path = "../sprawlr-docs" }
 sprawlr-fs = { path = "../sprawlr-fs" }
+sprawlr-iac = { path = "../sprawlr-iac" }
+chrono = "0.4"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"

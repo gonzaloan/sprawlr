@@ -198,7 +198,17 @@ pub fn demo_graph() -> ArchGraph {
     b.node(&orders_q, SqsQueue, "checkout-order-events", &region, &ck, json!({"fifo": false, "visibility_timeout_s": 30}), Ok);
     b.node(&notif, SnsTopic, "checkout-notifications", &region, &ck, json!({}), Ok);
     b.node(&mailer, LambdaFunction, "checkout-email-sender", &region, &ck, json!({"runtime": "nodejs22.x", "memory_mb": 256}), Ok);
-    b.node(&role, IamRole, "checkout-api-task-role", &region, &[], json!({"placeholder": true}), Unknown);
+    let task_policy = json!({"Statement": [
+        {"Effect": "Allow", "Action": "sqs:SendMessage", "Resource": orders_q},
+        {"Effect": "Allow", "Action": "sns:Publish", "Resource": notif},
+        {"Effect": "Allow", "Action": "events:PutEvents", "Resource": bus},
+        {"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": secret}
+    ]});
+    let ecs_trust = json!({"Statement": [{"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole",
+        "Condition": {"StringEquals": {"aws:SourceAccount": ACCT}}}]});
+    b.node(&role, IamRole, "checkout-api-task-role", &region, &[],
+        json!({"policies": [crate::iam::parse_document("checkout-api-task-policy", &task_policy)], "aws_managed_policies": [],
+               "trust": crate::iam::trusted_by(&ecs_trust), "instance_profiles": [], "created_days": 300, "last_used_days": 0, "last_used_region": REGION}), Unknown);
 
     b.edge("internet", &cdn, RoutesTo, &[(Declared, "cloudfront:viewer")]);
     b.edge(&cdn, &alb, RoutesTo, &[(Declared, "cloudfront:origin")]);
@@ -250,9 +260,29 @@ pub fn demo_graph() -> ArchGraph {
         Ok,
     );
 
+    let invoice_role = format!("arn:aws:iam::{ACCT}:role/billing-invoice-role");
+    let invoice_policy = json!({"Statement": [
+        {"Effect": "Allow", "Action": ["dynamodb:PutItem", "dynamodb:UpdateItem"], "Resource": table},
+        {"Effect": "Allow", "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"], "Resource": orders_q},
+        {"Effect": "Allow", "Action": "events:PutEvents", "Resource": bus}
+    ]});
+    let lambda_trust =
+        json!({"Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]});
+    b.node(
+        &invoice_role,
+        IamRole,
+        "billing-invoice-role",
+        &region,
+        &bl,
+        json!({"policies": [crate::iam::parse_document("billing-invoice-policy", &invoice_policy)],
+               "aws_managed_policies": ["AWSLambdaBasicExecutionRole"], "trust": crate::iam::trusted_by(&lambda_trust),
+               "instance_profiles": [], "created_days": 200, "last_used_days": 0, "last_used_region": REGION}),
+        Unknown,
+    );
+    b.edge(&invoices, &invoice_role, AssumesRole, &[(Declared, "lambda:role")]);
     b.edge(&invoices, &orders_q, Reads, &[(Declared, "lambda:event_source_mapping"), (Observed, "cloudwatch:NumberOfMessagesReceived")]);
-    b.edge(&invoices, &table, Writes, &[(Declared, "env:INVOICES_TABLE"), (Permitted, "iam:role/InvoiceProcessorRole")]);
-    b.edge(&invoices, &bus, Publishes, &[(Permitted, "iam:role/InvoiceProcessorRole")]);
+    b.edge(&invoices, &table, Writes, &[(Declared, "env:INVOICES_TABLE"), (Permitted, "iam:role/billing-invoice-role")]);
+    b.edge(&invoices, &bus, Publishes, &[(Permitted, "iam:role/billing-invoice-role")]);
     b.edge(&close, &invoices, Invokes, &[(Declared, "states:definition")]);
     b.edge(&close, &renderer, Invokes, &[(Declared, "states:definition")]);
     b.edge(&renderer, &table, Reads, &[(Declared, "env:INVOICES_TABLE")]);
@@ -340,8 +370,11 @@ pub fn demo_graph() -> ArchGraph {
         {"Effect": "Allow", "Action": ["s3:PutObject", "s3:PutObjectAcl"], "Resource": format!("{output}/*")},
         {"Effect": "Allow", "Action": "dynamodb:*", "Resource": "*"}
     ]});
+    let ec2_trust = json!({"Statement": [{"Effect": "Allow", "Principal": {"Service": "ec2.amazonaws.com"}, "Action": "sts:AssumeRole"}]});
     b.node(&wrole, IamRole, "reports-worker-role", &region, &[],
-        json!({"policies": [crate::iam::parse_document("reports-worker-inline", &doc)], "aws_managed_policies": ["CloudWatchAgentServerPolicy"], "instance_profiles": ["reports-worker-profile"], "created_days": 220, "last_used_days": 0}), Unknown);
+        json!({"policies": [crate::iam::parse_document("reports-worker-inline", &doc)], "aws_managed_policies": ["CloudWatchAgentServerPolicy"],
+               "trust": crate::iam::trusted_by(&ec2_trust), "instance_profiles": ["reports-worker-profile"], "created_days": 220, "last_used_days": 0,
+               "last_used_region": REGION}), Unknown);
     b.edge(&worker, &wrole, AssumesRole, &[(Declared, "ec2:instance_profile")]);
     b.edge(&uploads, &jobs, Publishes, &[(Declared, "s3:notification")]);
     let redrive = Evidence {
@@ -378,7 +411,11 @@ pub fn demo_graph() -> ArchGraph {
         "ci-deploy-2023",
         &region,
         &[],
-        json!({"policies": [], "aws_managed_policies": ["AdministratorAccess"], "created_days": 690, "last_used_days": 410}),
+        json!({"policies": [], "aws_managed_policies": ["AdministratorAccess"], "created_days": 690, "last_used_days": 410,
+               "trust": crate::iam::trusted_by(&json!({"Statement": [{"Effect": "Allow", "Action": "sts:AssumeRoleWithWebIdentity",
+                   "Principal": {"Federated": format!("arn:aws:iam::{ACCT}:oidc-provider/token.actions.githubusercontent.com")},
+                   "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com"},
+                                 "StringLike": {"token.actions.githubusercontent.com:sub": "repo:acme/storefront:*"}}}]}))}),
         Unknown,
     );
 

@@ -241,6 +241,35 @@ export interface Alarm {
   reason: string | null;
 }
 
+// ---- iam.rs (role attributes)
+
+/** attrs.trust entries: who a role's trust policy lets take it on. Condition values are never kept. */
+export interface Principal {
+  kind: "service" | "account" | "role" | "user" | "federated" | "deleted" | "anyone";
+  id: string;
+  conditions: string[];
+}
+
+export type AccessLevel = "read" | "write" | "permissions" | "full";
+
+/** attrs.access entries: what a role may do on one service. */
+export interface ServiceAccess {
+  /** IAM's service prefix (`dynamodb`), or `*` for every service. */
+  service: string;
+  allow: boolean;
+  levels: AccessLevel[];
+  actions: string[];
+  except_actions: string[];
+  /** Resources of this scan the grant covers. */
+  targets: string[];
+  everything: boolean;
+  except_resources: string[];
+  /** Resource patterns that match nothing in this scan. */
+  elsewhere: string[];
+  conditional: boolean;
+  policies: string[];
+}
+
 export interface ScanResult {
   snapshot: Snapshot;
   warnings: string[];

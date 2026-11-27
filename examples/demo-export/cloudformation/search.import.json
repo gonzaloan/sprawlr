@@ -1,0 +1,30 @@
+[
+  {
+    "LogicalResourceId": "SearchPublicApi",
+    "ResourceIdentifier": {
+      "RestApiId": "a1b2c3search"
+    },
+    "ResourceType": "AWS::ApiGateway::RestApi"
+  },
+  {
+    "LogicalResourceId": "SearchIndexer",
+    "ResourceIdentifier": {
+      "FunctionName": "search-indexer"
+    },
+    "ResourceType": "AWS::Lambda::Function"
+  },
+  {
+    "LogicalResourceId": "SearchQueryHandler",
+    "ResourceIdentifier": {
+      "FunctionName": "search-query-handler"
+    },
+    "ResourceType": "AWS::Lambda::Function"
+  },
+  {
+    "LogicalResourceId": "SearchProducts",
+    "ResourceIdentifier": {
+      "DomainName": "search-products"
+    },
+    "ResourceType": "AWS::OpenSearchService::Domain"
+  }
+]

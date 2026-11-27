@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import demo from "../demo/demo-snapshot.json";
-import { buildIndex, displayName, flowView, fmtX, hopVerb, insightsOf, mapScope, nameList, overview, apps, orphans, permissionOnly, shown, whatIf, type Snapshot } from ".";
+import {
+  buildIndex,
+  displayName,
+  envChoices,
+  envName,
+  envs,
+  flowView,
+  fmtX,
+  hopVerb,
+  insightsOf,
+  mapScope,
+  nameList,
+  overview,
+  apps,
+  orphans,
+  permissionOnly,
+  projectable,
+  shown,
+  whatIf,
+  type Snapshot,
+} from ".";
 
 const snap = demo as unknown as Snapshot;
 const ix = buildIndex(snap);
@@ -25,6 +45,16 @@ describe("graph", () => {
     const worker = byName("reports-worker");
     expect(ix.iamMapped.has(worker.id)).toBe(true);
     expect(ix.iamMapped.has(byName("checkout-api").id)).toBe(false);
+  });
+
+  it("offers environments to switch between only when an app runs in more than one", () => {
+    expect(envChoices(ix)).toEqual(["prod", "dev"]);
+    const devOutsideApps = snap.nodes.map((n) => (n.app && n.env && envName(n.env.value) === "dev" ? { ...n, env: null } : n));
+    const apart = buildIndex({ ...snap, nodes: devOutsideApps });
+    expect(envs(apart)).toEqual(["prod", "dev"]);
+    expect(envChoices(apart)).toEqual([]);
+    const loneTest = snap.nodes.map((n) => (!n.app && !n.env && n.kind.type === "iam_role" ? { ...n, env: { value: "test", method: "naming", confidence: 0.7 } } : n));
+    expect(envChoices(buildIndex({ ...snap, nodes: loneTest } as Snapshot))).toEqual(["prod", "dev"]);
   });
 
   it("hides permission-only connections unless asked, except for IAM-mapped resources", () => {
@@ -79,6 +109,9 @@ describe("what if traffic grows", () => {
 
   it("says when nothing on the map has load figures", () => {
     expect(whatIf(ins, 2, new Set(["nothing-here"])).measured).toBe(0);
+    expect(projectable(ins, new Set(["nothing-here"]))).toBe(false);
+    expect(projectable(ins, mapScope(ix, overview(ix, null, apps(ix, null, snap.findings ?? []), []), null))).toBe(true);
+    expect(projectable(ins, mapScope(ix, overview(ix, "dev", apps(ix, "dev", snap.findings ?? []), []), "dev"))).toBe(false);
   });
 });
 

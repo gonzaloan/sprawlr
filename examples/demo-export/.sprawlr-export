@@ -1,0 +1,23 @@
+# Files sprawlr wrote in its last export here. The next export replaces them and touches nothing else.
+README.md
+cloudformation/checkout.import.json
+cloudformation/checkout.json
+cloudformation/reporting.import.json
+cloudformation/reporting.json
+cloudformation/search.import.json
+cloudformation/search.json
+cloudformation/shared.import.json
+cloudformation/shared.json
+docs/README.md
+docs/apps/billing.md
+docs/apps/checkout.md
+docs/apps/reporting.md
+docs/apps/search.md
+terraform/checkout.tf
+terraform/imports.tf
+terraform/providers.tf
+terraform/reporting.tf
+terraform/search.tf
+terraform/shared.tf
+terraform/terraform.tfvars.example
+terraform/variables.tf

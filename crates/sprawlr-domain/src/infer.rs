@@ -7,14 +7,14 @@
 //! | UserOverride  | always kept                      | always kept                       |
 //! | Tag           | `app`, `application`, `awsApplication`… (0.95) | `env`, `environment`, `stage` (0.95) |
 //! | Stack         | CloudFormation/CDK stack name (0.8) | env token in stack name (0.8)  |
-//! | Naming        | shared name token, ≥2 nodes (0.6) | env token in name (0.7)          |
+//! | Naming        | an app from a tag or stack named in it; else a shared first word (verb + next), ≥2 nodes (0.6) | env token in name, never a domain's extension (0.7) |
 //! | Containment   | —                                | inherited from parent, e.g. VPC (0.6) |
 //! | Graph         | unanimous runtime neighbours (0.5) | unanimous runtime neighbours (0.5) |
 //!
 //! Apps spread over *communication* edges; environments spread over *containment*
 //! (a resource inside `prod-vpc` is prod), then over edges.
 
-use crate::{ArchGraph, Environment, InferenceMethod, Inferred, Layer, Node, NodeId};
+use crate::{ArchGraph, Environment, InferenceMethod, Inferred, Layer, Node, NodeId, NodeKind};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const APP_TAGS: [&str; 7] = ["app", "application", "awsapplication", "app-name", "service", "project", "system"];
@@ -22,11 +22,57 @@ const ENV_TAGS: [&str; 5] = ["env", "environment", "stage", "tier", "aws:service
 const STACK_TAG: &str = "aws:cloudformation:stack-name";
 
 /// Words that describe *what* a resource is, not *which app* it belongs to.
-const GENERIC: [&str; 42] = [
-    "aws", "stack", "cdk", "cfn", "lambda", "function", "fn", "func", "handler", "api", "apigw", "gateway", "db", "database", "rds",
-    "cluster", "instance", "table", "dynamodb", "ddb", "queue", "sqs", "dlq", "topic", "sns", "bucket", "s3", "role", "policy", "sg",
-    "secret", "key", "kms", "service", "svc", "worker", "task", "alb", "lb", "elb", "bus", "default",
+const GENERIC: [&str; 44] = [
+    "aws",
+    "stack",
+    "cdk",
+    "cfn",
+    "lambda",
+    "function",
+    "fn",
+    "func",
+    "handler",
+    "api",
+    "apigw",
+    "gateway",
+    "db",
+    "database",
+    "rds",
+    "cluster",
+    "instance",
+    "table",
+    "dynamodb",
+    "ddb",
+    "queue",
+    "sqs",
+    "dlq",
+    "topic",
+    "sns",
+    "bucket",
+    "s3",
+    "role",
+    "policy",
+    "sg",
+    "secret",
+    "key",
+    "kms",
+    "service",
+    "svc",
+    "worker",
+    "task",
+    "alb",
+    "lb",
+    "elb",
+    "bus",
+    "default",
+    "www",
+    "cloudfront",
 ];
+
+/// Words that start a name for what it does (`get-quotes-*`, `sendDailyDigest`): never an app
+/// on their own.
+const VERBS: [&str; 14] =
+    ["get", "put", "post", "list", "send", "process", "handle", "create", "update", "delete", "fetch", "run", "check", "notify"];
 
 #[derive(Debug, Default)]
 pub struct InferenceReport {
@@ -63,31 +109,40 @@ pub fn infer(g: &mut ArchGraph) -> InferenceReport {
             n.env = env_from_tags(&n.tags)
                 .map(|e| inferred(e, InferenceMethod::Tag, 0.95))
                 .or_else(|| n.tags.get(STACK_TAG).and_then(|s| env_from_name(s)).map(|e| inferred(e, InferenceMethod::Stack, 0.8)))
-                .or_else(|| env_from_name(&n.name).map(|e| inferred(e, InferenceMethod::Naming, 0.7)));
+                .or_else(|| env_from_name(name_words(n)).map(|e| inferred(e, InferenceMethod::Naming, 0.7)));
         }
     }
 
-    // --- 2. naming clusters (with organisation-prefix detection)
-    let token_lists: Vec<(NodeId, Vec<String>)> = g
+    // --- 2. names: organisation prefixes set aside, then apps tags and stacks already name,
+    // then groups that share a first word
+    let token_lists: Vec<Words> = g
         .nodes()
         .filter(|n| app_eligible(n) && n.app.is_none())
-        .map(|n| (n.id.clone(), meaningful_tokens(&n.name)))
+        .map(|n| (n.id.clone(), meaningful_tokens(name_words(n))))
         .filter(|(_, t)| !t.is_empty())
         .collect();
     let prefixes = org_prefixes(&token_lists);
-    let candidates: Vec<(NodeId, String)> = token_lists
+    let unprefixed: Vec<Words> = token_lists
         .iter()
-        .filter_map(|(id, t)| t.iter().find(|tok| !prefixes.contains(*tok)).map(|tok| (id.clone(), tok.clone())))
+        .filter_map(|(id, t)| t.iter().position(|tok| !prefixes.contains(tok)).map(|start| (id.clone(), t[start..].to_vec())))
         .collect();
-    let mut cluster_size: HashMap<&str, usize> = HashMap::new();
-    for (_, c) in &candidates {
-        *cluster_size.entry(c.as_str()).or_default() += 1;
-    }
-    let naming: HashMap<NodeId, String> =
-        candidates.iter().filter(|(_, c)| cluster_size[c.as_str()] >= 2).map(|(id, c)| (id.clone(), c.clone())).collect();
+    let known: Vec<(Vec<String>, String)> = g
+        .nodes()
+        .filter_map(|n| n.app.as_ref())
+        .filter(|a| matches!(a.method, InferenceMethod::Tag | InferenceMethod::Stack | InferenceMethod::UserOverride))
+        .map(|a| a.value.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|app| (meaningful_tokens(&app), app))
+        .filter(|(t, _)| !t.is_empty())
+        .collect();
+    let (carried, rest): (Vec<_>, Vec<_>) =
+        unprefixed.into_iter().map(|(id, t)| (known_app_in(&t, &known), (id, t))).partition(|(app, _)| app.is_some());
+    let mut by_name: HashMap<NodeId, String> = carried.into_iter().filter_map(|(app, (id, _))| Some((id, app?))).collect();
+    by_name.extend(cluster_names(&rest.into_iter().map(|(_, w)| w).collect::<Vec<_>>()));
     for n in g.nodes_mut() {
-        if let Some(app) = naming.get(&n.id) {
-            n.app = Some(inferred(app.clone(), InferenceMethod::Naming, 0.6));
+        if let Some(app) = by_name.remove(&n.id) {
+            n.app = Some(inferred(app, InferenceMethod::Naming, 0.6));
         }
     }
     report.ignored_prefixes = prefixes.into_iter().collect();
@@ -174,9 +229,11 @@ fn is_override<T>(x: &Option<Inferred<T>>) -> bool {
     matches!(x, Some(i) if i.method == InferenceMethod::UserOverride)
 }
 
-/// Network and scope resources are shared infrastructure, never owned by one app.
+/// Network and scope resources are shared infrastructure, never owned by one app; neither are
+/// resources AWS creates for itself (`aws/s3` keys).
 fn app_eligible(n: &Node) -> bool {
     !matches!(n.layer(), Layer::Scope | Layer::Network | Layer::External)
+        && n.attrs.get("managed_by").and_then(|v| v.as_str()) != Some("AWS")
 }
 
 fn tag<'a>(tags: &'a BTreeMap<String, String>, keys: &[&str]) -> Option<&'a str> {
@@ -206,6 +263,59 @@ pub fn app_from_name(name: &str) -> Option<String> {
 
 pub fn env_from_name(name: &str) -> Option<Environment> {
     tokens(name).iter().find_map(|t| env_token(t))
+}
+
+/// The part of a resource's name that can say its app or environment. Resources named by a
+/// hostname (`learn.example.dev`) leave out the domain's extension, which is never either;
+/// subdomains still count (`dev.example.com`). Other names keep their dots (`orders.dev`).
+fn name_words(n: &Node) -> &str {
+    match n.kind {
+        NodeKind::CloudFront | NodeKind::Route53Zone | NodeKind::S3Bucket | NodeKind::ExternalEndpoint => without_tld(&n.name),
+        _ => &n.name,
+    }
+}
+
+fn without_tld(name: &str) -> &str {
+    match name.rsplit_once('.') {
+        Some((rest, tld)) if (2..=24).contains(&tld.len()) && tld.chars().all(|c| c.is_ascii_alphabetic()) => rest,
+        _ => name,
+    }
+}
+
+/// The known app a name carries: its words in order, earliest in the name, the longer app on a
+/// tie (`github-actions-deploy-quiz-guide` → `quiz-guide`). A one-word app only counts at the
+/// start of a name, where a name says what it belongs to (`billing-web-assets` is billing's).
+fn known_app_in(name: &[String], known: &[(Vec<String>, String)]) -> Option<String> {
+    known
+        .iter()
+        .filter_map(|(words, app)| {
+            let at = name.windows(words.len()).position(|w| w == words.as_slice())?;
+            (at == 0 || words.len() > 1).then_some((at, words.len(), app))
+        })
+        .min_by_key(|(at, len, _)| (*at, std::cmp::Reverse(*len)))
+        .map(|(_, _, app)| app.clone())
+}
+
+/// A resource and the meaningful words of its name.
+type Words = (NodeId, Vec<String>);
+
+/// Apps from groups of at least two resources that share their first word. A name that starts
+/// with a verb is grouped by the verb and what follows (`get-quotes-*`, apart from
+/// `getWeatherReport`), since the verb alone says what a resource does, not what it is part of.
+fn cluster_names(candidates: &[Words]) -> HashMap<NodeId, String> {
+    let key = |t: &[String]| match t {
+        [verb, what, ..] if VERBS.contains(&verb.as_str()) => format!("{verb}-{what}"),
+        _ => t[0].clone(),
+    };
+    let mut groups: BTreeMap<String, Vec<&NodeId>> = BTreeMap::new();
+    for (id, t) in candidates {
+        groups.entry(key(t)).or_default().push(id);
+    }
+    groups
+        .into_iter()
+        .filter(|(_, ids)| ids.len() >= 2)
+        .flat_map(|(app, ids)| ids.into_iter().map(move |id| (id.clone(), app.clone())))
+        .collect()
 }
 
 fn env_token(t: &str) -> Option<Environment> {
@@ -285,7 +395,7 @@ fn kebab(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EdgeKind, Evidence, EvidenceKind, NodeKind};
+    use crate::{EdgeKind, Evidence, EvidenceKind};
 
     fn node(id: &str, kind: NodeKind, name: &str, tags: &[(&str, &str)]) -> Node {
         let mut n = Node::new(id, kind, name);
@@ -307,6 +417,120 @@ mod tests {
         assert_eq!(tokens("CheckoutApi-prod_v2"), vec!["checkout", "api", "prod", "v2"]);
         assert_eq!(meaningful_tokens("CheckoutStack-OrdersTable1A2B3C-XYZ123ABC"), vec!["checkout", "orders"]);
         assert_eq!(app_from_name("checkout-service-prod"), Some("checkout".into()));
+    }
+
+    #[test]
+    fn a_site_s_domain_extension_is_not_an_environment() {
+        let mut g = ArchGraph::new();
+        g.upsert_node(node("cdn", NodeKind::CloudFront, "learn.example.dev", &[]));
+        g.upsert_node(node("api", NodeKind::ApiGateway, "learn", &[]));
+        g.upsert_node(node("dev-cdn", NodeKind::CloudFront, "dev.example.com", &[]));
+        g.upsert_node(node("stg-cdn", NodeKind::CloudFront, "api.staging.example.com", &[]));
+        g.upsert_node(node("table", NodeKind::DynamoTable, "orders.dev", &[]));
+        link(&mut g, "cdn", "api", EdgeKind::RoutesTo);
+        infer(&mut g);
+        let env = |id: &str| g.node(&id.into()).unwrap().env.as_ref().map(|e| e.value.clone());
+        assert_eq!(env("cdn"), None);
+        assert_eq!(env("api"), None, "nor is what the site calls");
+        assert_eq!(env("dev-cdn"), Some(Environment::Dev), "a subdomain still counts");
+        assert_eq!(env("stg-cdn"), Some(Environment::Staging));
+        assert_eq!(env("table"), Some(Environment::Dev), "only hostnames have an extension");
+    }
+
+    #[test]
+    fn names_that_carry_a_known_app_join_it_by_its_exact_name() {
+        let mut g = ArchGraph::new();
+        g.upsert_node(node("sync", NodeKind::LambdaFunction, "aws-quiz-guide-sync", &[(STACK_TAG, "aws-quiz-guide")]));
+        g.upsert_node(node("progress", NodeKind::DynamoTable, "aws-quiz-guide-progress", &[]));
+        g.upsert_node(node("deploy", NodeKind::IamRole, "github-actions-deploy-quiz-guide", &[]));
+        g.upsert_node(node("pay", NodeKind::LambdaFunction, "x", &[("App", "Payments API")]));
+        g.upsert_node(node("events", NodeKind::SqsQueue, "payments-api-events", &[]));
+        infer(&mut g);
+        assert_eq!(app(&g, "progress"), Some(("quiz-guide".into(), InferenceMethod::Naming)));
+        assert_eq!(app(&g, "deploy"), Some(("quiz-guide".into(), InferenceMethod::Naming)), "a two-word app counts anywhere");
+        assert_eq!(app(&g, "events"), Some(("payments-api".into(), InferenceMethod::Naming)), "the app's own name, not its words");
+    }
+
+    #[test]
+    fn a_one_word_known_app_counts_only_at_the_start_of_a_name() {
+        let mut g = ArchGraph::new();
+        g.upsert_node(node("b", NodeKind::LambdaFunction, "billing-fn", &[("app", "billing")]));
+        g.upsert_node(node("w", NodeKind::LambdaFunction, "web-fn", &[("app", "web")]));
+        g.upsert_node(node("q", NodeKind::SqsQueue, "billing-web-assets", &[]));
+        g.upsert_node(node("o", NodeKind::S3Bucket, "assets-web", &[]));
+        infer(&mut g);
+        assert_eq!(app(&g, "q"), Some(("billing".into(), InferenceMethod::Naming)));
+        assert!(app(&g, "o").is_none());
+    }
+
+    #[test]
+    fn an_organisation_prefix_is_set_aside_before_known_apps() {
+        let mut g = ArchGraph::new();
+        g.upsert_node(node("tools", NodeKind::LambdaFunction, "tools", &[(STACK_TAG, "acme")]));
+        for (i, name) in
+            ["acme-checkout-api", "acme-checkout-db", "acme-billing-fn", "acme-billing-queue", "acme-search-fn", "acme-lonely-thing"]
+                .iter()
+                .enumerate()
+        {
+            g.upsert_node(node(&format!("n{i}"), NodeKind::LambdaFunction, name, &[]));
+        }
+        infer(&mut g);
+        assert_eq!(app(&g, "n0").unwrap().0, "checkout");
+        assert_eq!(app(&g, "n2").unwrap().0, "billing");
+    }
+
+    #[test]
+    fn a_name_that_starts_with_a_verb_is_grouped_by_what_follows() {
+        let mut g = ArchGraph::new();
+        let names = ["get-quotes-cfn-exec", "get-quotes-gh-plan", "get-quotes-gh-apply", "getWeatherReport-role-x9k2m7qp"];
+        for (i, name) in names.iter().enumerate() {
+            g.upsert_node(node(&format!("n{i}"), NodeKind::IamRole, name, &[]));
+        }
+        infer(&mut g);
+        assert_eq!(app(&g, "n0").unwrap().0, "get-quotes");
+        assert_eq!(app(&g, "n2").unwrap().0, "get-quotes");
+        assert!(app(&g, "n3").is_none(), "getWeatherReport is not part of get-quotes");
+    }
+
+    #[test]
+    fn one_entity_named_most_often_does_not_split_an_app() {
+        let mut g = ArchGraph::new();
+        let names = ["shop-orders-table", "shop-orders-queue", "shop-orders-fn", "shop-payments-fn", "shop-refunds-fn"];
+        for (i, name) in names.iter().enumerate() {
+            g.upsert_node(node(&format!("n{i}"), NodeKind::LambdaFunction, name, &[]));
+        }
+        infer(&mut g);
+        for i in 0..names.len() {
+            assert_eq!(app(&g, &format!("n{i}")).unwrap().0, "shop");
+        }
+    }
+
+    #[test]
+    fn a_naming_cluster_is_named_by_its_first_word() {
+        let mut g = ArchGraph::new();
+        g.upsert_node(node("cdn", NodeKind::CloudFront, "docs.example.dev", &[]));
+        g.upsert_node(node("site", NodeKind::S3Bucket, "docs-example-111122223333", &[]));
+        g.upsert_node(node("r1", NodeKind::IamRole, "AmplifySSRLoggingRole-1a2b3c4d-1111-2222-3333-444455556666", &[]));
+        g.upsert_node(node("r2", NodeKind::IamRole, "AmplifySSRLoggingRole-5e6f7a8b-1111-2222-3333-444455556666", &[]));
+        infer(&mut g);
+        assert_eq!(app(&g, "cdn").unwrap().0, "docs");
+        assert_eq!(app(&g, "site").unwrap().0, "docs");
+        assert_eq!(app(&g, "r1").unwrap().0, "amplify");
+    }
+
+    #[test]
+    fn aws_managed_resources_belong_to_no_app() {
+        let mut g = ArchGraph::new();
+        for (id, name) in [("k1", "aws/ebs"), ("k2", "aws/ebs"), ("k3", "aws/backup")] {
+            let mut k = node(id, NodeKind::KmsKey, name, &[]);
+            k.attrs = serde_json::json!({ "managed_by": "AWS" });
+            g.upsert_node(k);
+        }
+        g.upsert_node(node("role", NodeKind::IamRole, "backup-vault-role", &[]));
+        infer(&mut g);
+        assert!(app(&g, "k1").is_none());
+        assert!(app(&g, "k3").is_none());
+        assert!(app(&g, "role").is_none());
     }
 
     #[test]

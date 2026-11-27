@@ -1,11 +1,12 @@
-//! IAM roles with their policies, in one paginated call (`GetAccountAuthorizationDetails`).
+//! IAM roles with their policies and trust policies, in one paginated call
+//! (`GetAccountAuthorizationDetails`).
 //! Only roles and customer-managed policies are requested: AWS-managed policy documents
 //! are thousands and add nothing specific (their names are kept and judged as broad grants).
 
 use crate::{ScanContext, ScanOutput};
 use aws_sdk_iam::types::EntityType;
 use serde_json::{json, Value};
-use sprawlr_domain::iam::{parse_document, Policy};
+use sprawlr_domain::iam::{parse_document, trusted_by, Policy};
 use sprawlr_domain::{Node, NodeKind};
 use std::collections::HashMap;
 
@@ -23,6 +24,11 @@ pub struct RoleInfo {
     pub instance_profiles: Vec<(String, String)>, // (name, ARN)
     pub created_days: Option<i64>,
     pub last_used_days: Option<i64>,
+    pub last_used_region: Option<String>,
+    /// The trust policy (`AssumeRolePolicyDocument`), URL-encoded as IAM returns it.
+    pub trust: Option<String>,
+    /// The permissions boundary's policy ARN.
+    pub boundary: Option<String>,
 }
 
 pub async fn scan(ctx: &ScanContext) -> anyhow::Result<ScanOutput> {
@@ -60,6 +66,9 @@ pub async fn scan(ctx: &ScanContext) -> anyhow::Result<ScanOutput> {
                     .collect(),
                 created_days: r.create_date().map(|d| (now - d.secs()) / 86_400),
                 last_used_days: r.role_last_used().and_then(|u| u.last_used_date()).map(|d| (now - d.secs()) / 86_400),
+                last_used_region: r.role_last_used().and_then(|u| u.region()).map(String::from),
+                trust: r.assume_role_policy_document().map(String::from),
+                boundary: r.permissions_boundary().and_then(|b| b.permissions_boundary_arn()).map(String::from),
             });
         }
         for p in page.policies() {
@@ -99,6 +108,17 @@ pub fn map_roles(ctx: &ScanContext, roles: Vec<RoleInfo>, managed: &HashMap<Stri
             "created_days": r.created_days,
             "last_used_days": r.last_used_days,
         });
+        // Who may take the role on; condition values are dropped by `trusted_by` (ADR 0003).
+        // A document that doesn't decode leaves who may take the role on unknown, not "nobody".
+        if let Some(doc) = r.trust.as_deref().map(decode_document).filter(|d| d.get("Statement").is_some()) {
+            n.attrs["trust"] = json!(trusted_by(&doc));
+        }
+        if let Some(arn) = &r.boundary {
+            n.attrs["permissions_boundary"] = json!(arn.rsplit('/').next().unwrap_or(arn));
+        }
+        if let Some(region) = &r.last_used_region {
+            n.attrs["last_used_region"] = json!(region);
+        }
         out.nodes.push(n);
     }
     out
@@ -110,6 +130,44 @@ mod tests {
 
     fn ctx() -> ScanContext {
         ScanContext { sdk: aws_config::SdkConfig::builder().build(), account: "1".into(), region: "us-east-1".into() }
+    }
+
+    #[test]
+    fn a_trust_policy_keeps_condition_keys_and_drops_their_values() {
+        let trust = r#"{"Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::444455556666:root"},"Action":"sts:AssumeRole","Condition":{"StringEquals":{"sts:ExternalId":"vendor-shared-secret"}}}]}"#;
+        let out = map_roles(&ctx(), vec![role_trusted_by(trust)], &HashMap::new());
+        let attrs = out.nodes[0].attrs.to_string();
+        assert!(attrs.contains("sts:ExternalId") && attrs.contains("444455556666"), "{attrs}");
+        assert!(!attrs.contains("vendor-shared-secret"), "an external id is a shared secret: {attrs}");
+    }
+
+    #[test]
+    fn a_trust_policy_that_cannot_be_read_is_unknown_not_empty() {
+        let out = map_roles(&ctx(), vec![role_trusted_by("not a policy {")], &HashMap::new());
+        assert!(out.nodes[0].attrs.get("trust").is_none(), "{}", out.nodes[0].attrs);
+    }
+
+    #[test]
+    fn a_role_read_before_its_trust_policy_says_nothing_about_it() {
+        let mut r = role_trusted_by("");
+        r.trust = None;
+        let out = map_roles(&ctx(), vec![r], &HashMap::new());
+        assert!(out.nodes[0].attrs.get("trust").is_none(), "unknown, not 'nobody'");
+    }
+
+    fn role_trusted_by(doc: &str) -> RoleInfo {
+        RoleInfo {
+            arn: "arn:aws:iam::1:role/vendor-audit".into(),
+            name: "vendor-audit".into(),
+            inline: vec![],
+            attached: vec![],
+            instance_profiles: vec![],
+            created_days: None,
+            last_used_days: None,
+            last_used_region: None,
+            trust: Some(doc.into()),
+            boundary: None,
+        }
     }
 
     #[test]
@@ -142,11 +200,17 @@ mod tests {
                 instance_profiles: vec![("worker-profile".into(), "arn:aws:iam::1:instance-profile/worker-profile".into())],
                 created_days: Some(400),
                 last_used_days: Some(1),
+                last_used_region: Some("us-east-1".into()),
+                trust: Some("%7B%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22Service%22%3A%22ec2.amazonaws.com%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D".into()),
+                boundary: Some("arn:aws:iam::1:policy/team-boundary".into()),
             }],
             &managed,
         );
         let n = &out.nodes[0];
         assert_eq!(n.attrs["policies"].as_array().unwrap().len(), 2);
+        assert_eq!(n.attrs["trust"][0]["id"], "ec2.amazonaws.com");
+        assert_eq!(n.attrs["permissions_boundary"], "team-boundary");
+        assert_eq!(n.attrs["last_used_region"], "us-east-1");
         assert_eq!(n.attrs["aws_managed_policies"][0], "AmazonS3ReadOnlyAccess");
         assert!(n.aliases.contains(&"worker-profile".to_string()), "EC2 instance profiles resolve to the role");
     }

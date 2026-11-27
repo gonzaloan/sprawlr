@@ -1,21 +1,15 @@
 import type { ArchNode, Flow } from "../../domain";
 import { Dot, healthLabel } from "../../ui/Dot";
 import { SideLabel } from "./SideLabel";
-import { displayName, fmtCount, type AppSummary, type Index } from "../../domain";
+import { displayName, fmtCount, type AppSummary, type Index, type Place } from "../../domain";
 import { Find } from "./Find";
 import type { ReactNode } from "react";
-
-export type Place =
-  | { kind: "overview" }
-  | { kind: "app"; name: string }
-  | { kind: "resource"; id: string }
-  | { kind: "flow"; id: string }
-  | { kind: "cleanup" };
 
 interface Props {
   ix: Index;
   onFind: (id: string) => void;
   source: string;
+  /** Environments to switch between; none when switching would only hide resources. */
   envs: string[];
   env: string | null;
   onEnv: (e: string | null) => void;
@@ -40,13 +34,15 @@ export function Sidebar({ ix, onFind, source, envs, env, onEnv, apps, shared, un
 
       <Find ix={ix} onPick={onFind} />
 
-      <div className="envs" role="radiogroup" aria-label="Environment">
-        {[null, ...envs].map((e) => (
-          <button key={e ?? "all"} role="radio" aria-checked={env === e} className={`envs__opt${env === e ? " is-on" : ""}`} onClick={() => onEnv(e)}>
-            {e ?? "All"}
-          </button>
-        ))}
-      </div>
+      {envs.length > 0 && (
+        <div className="envs" role="radiogroup" aria-label="Environment" title="From Environment tags, stack names and resource names">
+          {[null, ...envs].map((e) => (
+            <button key={e ?? "all"} role="radio" aria-checked={env === e} className={`envs__opt${env === e ? " is-on" : ""}`} onClick={() => onEnv(e)}>
+              {e ?? "All"}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="side__scroll">
         <button className={`side__item side__item--map${is({ kind: "overview" }) ? " is-on" : ""}`} onClick={() => onPlace({ kind: "overview" })}>

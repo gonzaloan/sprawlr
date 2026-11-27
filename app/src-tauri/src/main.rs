@@ -70,6 +70,7 @@ fn main() {
             commands::hide_popover,
             commands::render_docs,
             commands::save_docs,
+            commands::export_code,
             commands::get_settings,
             commands::save_settings,
         ])

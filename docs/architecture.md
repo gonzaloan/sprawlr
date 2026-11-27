@@ -14,15 +14,18 @@ flowchart LR
     dom["sprawlr-domain\ngraph, inference, findings,\nflows, capacity, cleanup, IAM, logs"]
   end
   subgraph adapters["Driven adapters (where data comes from or goes)"]
-    aws["sprawlr-aws\nInfraSource, HealthSource, ErrorLogSource"]
-    fs["sprawlr-fs\nSnapshotStore, docs writer"]
+    aws["sprawlr-aws\nInfraSource, HealthSource, ErrorLogSource, ConfigSource"]
+    fs["sprawlr-fs\nSnapshotStore, docs and export writer"]
     demo["app::demo\nin-memory demo account"]
     docs["sprawlr-docs\nMarkdown + Mermaid"]
   end
+  iac["sprawlr-iac\nTerraform + CloudFormation"]
   cli --> app
   desk --> app
   mcp --> app
   app --> dom
+  app --> iac
+  iac --> dom
   aws -. implements .-> app
   fs -. implements .-> app
   demo -. implements .-> app
@@ -38,10 +41,11 @@ Arrows point inwards. Each crate may depend only on what is listed:
 | Crate | Layer | May depend on | Never |
 |---|---|---|---|
 | `sprawlr-domain` | domain | `serde`, `petgraph`, `chrono`, `regex` | I/O, async, AWS SDKs, any other sprawlr crate |
-| `sprawlr-app` | application | `sprawlr-domain`, `anyhow`, `serde`, `serde_json`, `chrono` | AWS SDKs, file system, Tauri, reading the clock (callers pass `now`) |
+| `sprawlr-iac` | domain (code from configuration) | `sprawlr-domain`, `serde`, `serde_json` | I/O, async, AWS SDKs |
+| `sprawlr-app` | application | `sprawlr-domain`, `sprawlr-iac`, `anyhow`, `serde`, `serde_json`, `chrono` | AWS SDKs, file system, Tauri, reading the clock (callers pass `now`) |
 | `sprawlr-docs` | adapter (presentation) | `sprawlr-domain` | I/O |
-| `sprawlr-aws` | adapter (driven) | `sprawlr-app`, `sprawlr-domain`, AWS SDKs | `sprawlr-fs`, drivers |
-| `sprawlr-fs` | adapter (driven) | `sprawlr-app`, `sprawlr-docs`, `sprawlr-domain` | AWS SDKs |
+| `sprawlr-aws` | adapter (driven) | `sprawlr-app`, `sprawlr-iac`, `sprawlr-domain`, AWS SDKs | `sprawlr-fs`, drivers |
+| `sprawlr-fs` | adapter (driven) | `sprawlr-app`, `sprawlr-docs`, `sprawlr-iac`, `sprawlr-domain` | AWS SDKs |
 | `sprawlr-cli`, `sprawlr-mcp`, `app/src-tauri` | drivers | everything above | business rules (they wire, parse and print) |
 
 Cargo enforces most of this: a crate cannot use what it does not list. Reviews enforce the rest (no rules in drivers, no I/O in the domain).
@@ -55,6 +59,7 @@ Defined in `crates/sprawlr-app/src/ports.rs`.
 | `InfraSource` | The structure of an account: resources, containment, declared connections | `sprawlr_aws::Aws`, `sprawlr_app::demo::Demo` |
 | `HealthSource` | Alarms, metrics, traces for resources already in the graph | `Aws`, `Demo` (no-op) |
 | `ErrorLogSource` | Error lines from logs, kept as masked patterns | `Aws`, `Demo` (no-op) |
+| `ConfigSource` | Each resource's whole configuration and its type's schema, read again for an export and never stored (ADR 0006) | `Aws` (Cloud Control `GetResource`, CloudFormation `DescribeType`), `Demo` (fictional configurations) |
 | `SnapshotStore` | The latest snapshot between runs, and optionally the last full scans (to say what changed) | `sprawlr_fs::FileSnapshotStore` (keeps 30 scans in `history/`), in-memory store in tests |
 | `SettingsStore` | The desktop app's choices (background refresh, notifications, last profile) | `sprawlr_fs::FileSettingsStore`, in-memory store in tests |
 | `Notifier` | Tells a person something got worse while they were not looking | `TauriNotifier` (desktop driver, since it needs Tauri), inbox double in tests |
@@ -66,6 +71,7 @@ Defined in `crates/sprawlr-app/src/ports.rs`.
 - `scan_account`: discover, then add IAM reach (`domain::iam`). Read health and error logs if asked. Infer apps and environments, analyse, and save.
 - `refresh_health`: same, from a snapshot, without rediscovering the structure. `RefreshOptions` says whether error logs are read again.
 - Both tell what changed against the previous full scan in the store (for a refresh, the scan before the one it refreshes) and keep full scans in the history.
+- `export_code` (`export.rs`): picks the resources of the account or an app, reads their configuration through `ConfigSource`, and has `sprawlr-iac` plan and write Terraform (awscc provider), CloudFormation and a README. Values that could be secrets become inputs. Drivers add the documentation and write the folder.
 - `refresh_in_background`: health only (never discovery or logs) for the stored scan, then at most one notification for what got worse, once a day per item.
 
 `queries` answers questions about a snapshot as plain data (status, apps, flows, a resource with its connections and evidence, blast radius, failures, recommendations, cleanup, search). The MCP server is a thin driver over it, and other drivers can reuse it.
@@ -80,7 +86,7 @@ Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `s
 | `infer` | Apps and environments from tags, stacks, naming, containment and connections; each answer says how it was found |
 | `analysis` | Findings (security, reliability, drift between environments) |
 | `insights::{flows, capacity, rules, lifecycle, signals}` | Flows from entry points, headroom and what-if, recommendations, cleanup |
-| `iam` | Policy evaluation: what a role allows, as `Permitted` edges; broad grants as findings |
+| `iam` | Policy evaluation: what a role allows, as `Permitted` edges and, by service, on the role (`attrs.access`); broad grants as findings; who a trust policy lets take a role on |
 | `logs` | Error lines reduced to masked templates |
 | `status` | The account in one line for the tray: level, headline, items, flows with errors, cleanup; what got worse between two reads |
 | `changes` | What changed between two scans of the same account, stored with the snapshot |
@@ -96,7 +102,7 @@ Documentation is rendered by `sprawlr_docs::render(&Snapshot)` and written by `s
 app/src/
   domain/      pure view logic over a snapshot (no React, no I/O), unit tested with vitest
   platform/    the Backend port and its adapters: tauri.ts (desktop), web.ts (browser demo)
-  features/    one folder per feature: map, flows, details, briefing, cleanup, docs, navigation, scan, tray, changes
+  features/    one folder per feature: map, architecture, flows, details, briefing, cleanup, docs, export, navigation, scan, tray, changes
   ui/          small shared components (Spark, Dot)
   demo/        the bundled fictional account and freshen(), which keeps its read looking recent
   app/         the shell that composes features

@@ -451,6 +451,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-cloudformation"
+version = "1.142.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e209634b5da12b43a563a537f2f39b052cbbf5eaf83c6bed2fa18c21106866f"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-query",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "aws-types",
+ "fastrand",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-cloudwatch"
 version = "1.144.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -551,6 +577,29 @@ dependencies = [
  "aws-types",
  "fastrand",
  "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-kms"
+version = "1.133.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4b7155f6147d4f78cb4600e142de8cf390818f3b49d12d7a815f08e9cd24577"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "fastrand",
  "regex-lite",
  "tracing",
 ]
@@ -5163,6 +5212,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sprawlr-domain",
+ "sprawlr-iac",
  "tokio",
 ]
 
@@ -5176,22 +5226,28 @@ dependencies = [
  "aws-sdk-apigateway",
  "aws-sdk-apigatewayv2",
  "aws-sdk-cloudcontrol",
+ "aws-sdk-cloudformation",
  "aws-sdk-cloudwatch",
  "aws-sdk-cloudwatchlogs",
  "aws-sdk-ec2",
  "aws-sdk-iam",
+ "aws-sdk-kms",
  "aws-sdk-lambda",
  "aws-sdk-resourcegroupstagging",
  "aws-sdk-secretsmanager",
  "aws-sdk-sns",
  "aws-sdk-sts",
  "aws-sdk-xray",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
  "chrono",
  "futures",
  "percent-encoding",
  "serde_json",
  "sprawlr-app",
  "sprawlr-domain",
+ "sprawlr-iac",
  "tokio",
 ]
 
@@ -5200,6 +5256,7 @@ name = "sprawlr-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "serde_json",
  "sprawlr-app",
@@ -5207,6 +5264,7 @@ dependencies = [
  "sprawlr-docs",
  "sprawlr-domain",
  "sprawlr-fs",
+ "sprawlr-iac",
  "tokio",
 ]
 
@@ -5223,6 +5281,7 @@ dependencies = [
  "sprawlr-docs",
  "sprawlr-domain",
  "sprawlr-fs",
+ "sprawlr-iac",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -5263,6 +5322,16 @@ dependencies = [
  "serde_json",
  "sprawlr-app",
  "sprawlr-docs",
+ "sprawlr-domain",
+ "sprawlr-iac",
+]
+
+[[package]]
+name = "sprawlr-iac"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "sprawlr-domain",
 ]
 

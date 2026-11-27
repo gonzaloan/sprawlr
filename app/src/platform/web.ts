@@ -11,7 +11,7 @@ const IDLE: RefreshState = { state: "idle", next_at: null, background: false, pa
 
 export function webBackend(demo: Snapshot): Backend {
   return {
-    can: { scan: false, saveDocsToFolder: false, tray: false },
+    can: { scan: false, saveDocsToFolder: false, exportCode: false, tray: false, historyKeys: false },
     view: async () => (new URLSearchParams(window.location.search).get("view") === "tray" ? "tray" : "main"),
     listProfiles: async () => [],
     scan: desktopOnly("Scanning an account"),
@@ -20,6 +20,8 @@ export function webBackend(demo: Snapshot): Backend {
     lastSnapshot: async () => (new URLSearchParams(window.location.search).get("view") === "tray" ? demo : null),
     renderDocs: async (snapshot) => (snapshot === demo ? (demoDocs as DocFile[]) : null),
     saveDocs: async () => null,
+    exportCode: desktopOnly("Exporting as code"),
+    onExportProgress: never,
     onProgress: never,
     refreshStored: desktopOnly("Refreshing"),
     refreshState: async () => IDLE,

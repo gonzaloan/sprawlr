@@ -1,23 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useWhereabouts } from "./useWhereabouts";
 import type { DocFile, Snapshot, Target } from "../domain";
 import { DEMO, download, useBackend } from "../platform";
 import { DocsView } from "../features/docs/DocsView";
 import {
   appView,
+  architectureOf,
+  everythingView,
   apps as appSummaries,
   blastRadius,
   buildIndex,
   capacityIndex,
+  crumbs,
   displayName,
+  envChoices,
   envName,
-  envs as envList,
+  exportScopeOf,
   flowView,
+  HOME,
   insightsOf,
   mapScope,
   orphans,
+  openingOf,
   overview,
+  projectable,
   projected,
+  resolve,
   resourceFocus,
+  toHash,
+  type Place,
+  type Tab,
+  type Whereabouts,
 } from "../domain";
 import { Briefing } from "../features/briefing/Briefing";
 import { FlowPanel } from "../features/flows/FlowPanel";
@@ -25,9 +38,12 @@ import { Cleanup } from "../features/cleanup/Cleanup";
 import { LensBar, WhatIfBanner, type LensKind } from "../features/map/Lens";
 import type { Load } from "../features/map/nodes";
 import { MapView } from "../features/map/MapView";
+import { ArchitectureView } from "../features/architecture/ArchitectureView";
 import { Details } from "../features/details/Details";
-import { Sidebar, type Place } from "../features/navigation/Sidebar";
+import { Sidebar } from "../features/navigation/Sidebar";
+import { Trail } from "../features/navigation/Trail";
 import { ScanPanel } from "../features/scan/ScanPanel";
+import { ExportDialog } from "../features/export/ExportDialog";
 
 const DEMO_SOURCE = "Demo account, us-east-1";
 
@@ -37,17 +53,21 @@ export default function App() {
   const [source, setSource] = useState(DEMO_SOURCE);
   const [fromScan, setFromScan] = useState(false);
   const ix = useMemo(() => buildIndex(snap), [snap]);
-  const envs = useMemo(() => envList(ix), [ix]);
-  const [env, setEnv] = useState<string | null>(envs.includes("prod") ? "prod" : null);
-  const [place, setPlace] = useState<Place>({ kind: "overview" });
-  const [selected, setSelected] = useState<string | null>(null);
+  const ins = useMemo(() => insightsOf(snap), [snap]);
+  const envs = useMemo(() => envChoices(ix), [ix]);
+  const [envPick, setEnv] = useState<string | null>(envs.includes("prod") ? "prod" : null);
+  // An environment this snapshot no longer offers (after a refresh or another scan) shows them all.
+  const env = envPick && envs.includes(envPick) ? envPick : null;
+  const nav = useWhereabouts((w) => resolve(ix, ins.flows, w), backend.can.historyKeys);
+  const { place, selected, tab } = nav.here;
+  const heading = useRef<HTMLHeadingElement>(null);
   const [blastOn, setBlastOn] = useState(false);
-  const [tab, setTab] = useState<"map" | "docs">("map");
   const [docs, setDocs] = useState<DocFile[] | null>(null);
   const [docMsg, setDocMsg] = useState<string | null>(null);
   const [lens, setLens] = useState<LensKind>("health");
   const [factor, setFactor] = useState(1);
   const [permissions, setPermissions] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Desktop: reopen the last scan instead of the demo.
   useEffect(() => {
@@ -76,17 +96,25 @@ export default function App() {
     return () => stops.forEach((p) => p.then((stop) => stop()));
   }, [backend]);
 
-  // Jump to a resource found with search: open its app (or focus it) and select it.
-  const find = (id: string) => {
-    const n = ix.byId.get(id);
-    if (!n) return;
-    if (n.env && env && envName(n.env.value) !== env) setEnv(null);
-    setTab("map");
-    if (n.app) {
-      setPlace({ kind: "app", name: n.app.value });
-      setSelected(id);
-      setBlastOn(false);
-    } else go({ kind: "resource", id });
+  // A new snapshot on screen: keep the whereabouts to what it has.
+  useEffect(() => {
+    const kept = resolve(ix, ins.flows, nav.here);
+    if (toHash(kept) !== toHash(nav.here)) nav.replace(kept);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ix]);
+
+  // A resource opened from search, a link or Back can be outside the environment shown.
+  useEffect(() => {
+    const n = selected ? ix.byId.get(selected) : undefined;
+    if (n?.env && env && envName(n.env.value) !== env) setEnv(null);
+  }, [selected, env, ix]);
+
+  useEffect(() => setBlastOn(false), [place, selected]);
+
+  /** Open a resource where it lives (its app, or on its own) with its details. */
+  const reveal = (id: string) => {
+    const w = openingOf(ix, id);
+    if (w) nav.go(w);
   };
 
   // Documentation is generated in Rust (desktop) or precomputed for the demo (web).
@@ -111,7 +139,6 @@ export default function App() {
   }, [fs]);
   const summaries = useMemo(() => appSummaries(ix, env, fs), [ix, env, fs]);
   const { shared, unassigned } = useMemo(() => orphans(ix, env), [ix, env]);
-  const ins = useMemo(() => insightsOf(snap), [snap]);
   const caps = useMemo(() => capacityIndex(ins), [ins]);
   const flows = useMemo(() => ins.flows.filter((f) => env === null || f.env === null || f.env === env), [ins, env]);
   const flow = place.kind === "flow" ? ins.flows.find((f) => f.id === place.id) : undefined;
@@ -124,12 +151,15 @@ export default function App() {
     return overview(ix, env, summaries, shared, permissions);
   }, [ix, place, env, summaries, shared, flow, permissions]);
 
-  // The what-if banner names only what is on the map shown.
+  // The what-if banner names only what is on the map shown, and only maps with load figures
+  // offer the capacity lens at all.
   const scope = useMemo(() => mapScope(ix, view, env), [ix, view, env]);
+  const capacityHere = useMemo(() => projectable(ins, scope), [ins, scope]);
+  const shownLens: LensKind = capacityHere ? lens : "health";
 
   // Load lens: utilisation at the chosen traffic level. Apps show their busiest resource.
   const loadOf = useMemo(() => {
-    if (lens !== "load") return undefined;
+    if (shownLens !== "load") return undefined;
     const pct = (u: number) => `${Math.round(u * 100)}%`;
     const one = (id: string): Load | undefined => {
       const c = caps.get(id);
@@ -145,33 +175,34 @@ export default function App() {
         .filter((l): l is Load => !!l)
         .sort((a, b) => b.util - a.util)[0];
     };
-  }, [lens, factor, caps, ix, env]);
+  }, [shownLens, factor, caps, ix, env]);
   const viewKey = `${source}|${JSON.stringify(place)}|${env}`;
+
+  // The architecture draws resources, so the whole account is every resource, not app blocks.
+  const arch = useMemo(() => {
+    if (tab !== "architecture" || place.kind === "cleanup") return null;
+    const resources = place.kind === "overview" ? everythingView(ix, env, permissions) : view;
+    return architectureOf(ix, resources, { quietVpcs: place.kind === "overview", env });
+  }, [tab, place, ix, env, permissions, view]);
+  const nothingHere = env ? "Nothing in this environment yet. Pick another environment or scan more regions." : "Nothing here yet. Scan more regions, or open another snapshot.";
 
   const blast = useMemo(() => (blastOn && selected ? blastRadius(ix, selected) : null), [blastOn, selected, ix]);
 
-  const go = (p: Place) => {
-    setPlace(p);
-    setSelected(p.kind === "resource" ? p.id : null);
-    setBlastOn(false);
-  };
+  const go = (p: Place) => nav.go({ place: p, selected: p.kind === "resource" ? p.id : null, tab });
+  const select = (id: string | null) => nav.go({ ...nav.here, selected: id });
+  const setTab = (t: Tab) => nav.go({ ...nav.here, tab: t });
 
   const load = (s: Snapshot, src: string, scanned = false) => {
     setSnap(s);
     setSource(src);
     setFromScan(scanned);
-    const e = envList(buildIndex(s));
+    const e = envChoices(buildIndex(s));
     setEnv(e.includes("prod") ? "prod" : null);
-    go({ kind: "overview" });
+    nav.replace(HOME);
   };
 
-  // Clicking an app block opens it; double-clicking a resource opens its app (or focuses it).
-  const open = (id: string) => {
-    if (id.startsWith("app:")) return go({ kind: "app", name: id.slice(4) });
-    const n = ix.byId.get(id);
-    if (n?.app) go({ kind: "app", name: n.app.value });
-    else if (n) go({ kind: "resource", id });
-  };
+  // Clicking an app block opens it; double-clicking a resource opens it where it lives.
+  const open = (id: string) => (id.startsWith("app:") ? go({ kind: "app", name: id.slice(4) }) : reveal(id));
 
   const docPath = place.kind === "app" ? `apps/${place.name}.md` : "README.md";
   const navigateDoc = (path: string) => {
@@ -222,9 +253,11 @@ export default function App() {
         : place.kind === "cleanup"
           ? "Resources that look unused, with the evidence and what they cost."
           : "Select a resource to inspect it. Dashed ones belong to other apps; double-click to open them.";
+  const exportScope = exportScopeOf(place);
   const showMap = tab === "map" && place.kind !== "cleanup";
+  const drawn = tab === "map" || tab === "architecture";
   const panel: "details" | "flow" | "briefing" | null =
-    tab !== "map" || place.kind === "cleanup" ? null : selected && ix.byId.has(selected) ? "details" : flow ? "flow" : place.kind === "overview" ? "briefing" : null;
+    !drawn || place.kind === "cleanup" ? null : selected && ix.byId.has(selected) ? "details" : flow ? "flow" : place.kind === "overview" ? "briefing" : null;
   // An item opened from the popover, waiting for the stored scan to be on screen.
   const [pending, setPending] = useState<Target | null>(null);
   live.current.openTarget = async (t: Target) => {
@@ -238,37 +271,25 @@ export default function App() {
   useEffect(() => {
     if (!pending || !fromScan) return;
     setPending(null);
-    setTab("map");
-    if (pending.type === "flow") go({ kind: "flow", id: pending.id });
-    else if (pending.type === "cleanup") go({ kind: "cleanup" });
-    else showNode(pending.id);
+    if (pending.type === "flow") nav.go({ place: { kind: "flow", id: pending.id }, selected: null, tab: "map" });
+    else if (pending.type === "cleanup") nav.go({ place: { kind: "cleanup" }, selected: null, tab: "map" });
+    else reveal(pending.id);
     // Runs once the stored scan (and its index) is on screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, fromScan, ix]);
-
-  const showNode = (id: string) => {
-    setTab("map");
-    const n = ix.byId.get(id);
-    if (n?.app) {
-      if (n.env && env && envName(n.env.value) !== env) setEnv(null);
-      setPlace({ kind: "app", name: n.app.value });
-      setSelected(id);
-      setBlastOn(false);
-    } else go({ kind: "resource", id });
-  };
 
   return (
     <div className={`shell${panel ? " shell--details" : ""}`}>
       <Sidebar
         ix={ix}
-        onFind={find}
+        onFind={reveal}
         source={source}
         envs={envs}
         env={env}
         onEnv={(e) => {
           setEnv(e);
-          setSelected(null);
-          setBlastOn(false);
+          const n = selected ? ix.byId.get(selected) : undefined;
+          if (n?.env && e && envName(n.env.value) !== e) nav.replace({ ...nav.here, selected: null });
         }}
         apps={summaries}
         shared={shared}
@@ -282,22 +303,55 @@ export default function App() {
 
       <main className="stage">
         <header className="stage__head">
+          <Trail
+            crumbs={crumbs(ix, ins.flows, nav.here)}
+            canBack={nav.canBack}
+            canForward={nav.canForward}
+            onBack={nav.back}
+            onForward={nav.forward}
+            onGo={(to: Whereabouts) => {
+              nav.go(to);
+              heading.current?.focus();
+            }}
+          />
           <div className="stage__title">
-            <h1>{title}</h1>
+            <h1 ref={heading} tabIndex={-1}>
+              {title}
+            </h1>
             {place.kind !== "cleanup" && (
             <div className="tabs" role="tablist" aria-label="View">
-              {(["map", "docs"] as const).map((t) => (
+              {(["map", "architecture", "docs"] as const).map((t) => (
                 <button key={t} role="tab" aria-selected={tab === t} className={`tabs__opt${tab === t ? " is-on" : ""}`} onClick={() => setTab(t)}>
-                  {t === "map" ? "Map" : "Documentation"}
+                  {t === "map" ? "Map" : t === "architecture" ? "Architecture" : "Documentation"}
                 </button>
               ))}
             </div>
+            )}
+            {exportScope && (
+              <button className="btn btn--small btn--quiet stage__action" onClick={() => setExporting(true)}>
+                Export as code
+              </button>
             )}
           </div>
           {tab === "map" && (
             <div className="stage__sub">
               <p className="muted">{hint}</p>
-              {showMap && <LensBar lens={lens} onLens={setLens} factor={factor} onFactor={setFactor} permissions={permissions} onPermissions={setPermissions} />}
+              {showMap && (
+                <LensBar
+                  lens={shownLens}
+                  onLens={setLens}
+                  capacity={capacityHere ? "here" : ins.capacity.length ? "elsewhere" : "none"}
+                  factor={factor}
+                  onFactor={setFactor}
+                  permissions={permissions}
+                  onPermissions={setPermissions}
+                />
+              )}
+            </div>
+          )}
+          {tab === "architecture" && place.kind !== "cleanup" && (
+            <div className="stage__sub">
+              <p className="muted">Where each resource runs: region, VPC, availability zones and subnet tiers, and what runs outside any VPC.</p>
             </div>
           )}
           {tab === "docs" && docMsg && <p className="muted">{docMsg}</p>}
@@ -305,7 +359,15 @@ export default function App() {
         {tab === "docs" ? (
           <DocsView docs={docs} path={docPath} onNavigate={navigateDoc} actions={docActions} />
         ) : place.kind === "cleanup" ? (
-          <Cleanup ix={ix} items={ins.lifecycle} onShow={showNode} />
+          <Cleanup ix={ix} items={ins.lifecycle} onShow={reveal} />
+        ) : arch ? (
+          arch.regions.length || arch.edge.length || arch.accountWide.length || arch.outside.length ? (
+            <ArchitectureView arch={arch} account={snap.nodes.find((n) => n.account)?.account ?? null} env={env} findingsByNode={findingsByNode} selected={selected} onSelect={select} />
+          ) : (
+            <div className="empty">
+              <p>{nothingHere}</p>
+            </div>
+          )
         ) : view.nodes.length ? (
           <MapView
             view={view}
@@ -313,37 +375,37 @@ export default function App() {
             findingsByNode={findingsByNode}
             selected={selected}
             blast={blast}
-            onSelect={(id) => {
-              setSelected(id);
-              setBlastOn(false);
-            }}
+            onSelect={select}
             onOpen={open}
             loadOf={loadOf}
           >
-            {lens === "load" && <WhatIfBanner ix={ix} ins={ins} factor={factor} scope={scope} />}
+            {shownLens === "load" && <WhatIfBanner ix={ix} ins={ins} factor={factor} scope={scope} />}
           </MapView>
         ) : (
           <div className="empty">
-            <p>Nothing in this environment yet. Pick another environment or scan more regions.</p>
+            <p>{nothingHere}</p>
           </div>
         )}
       </main>
+      {exporting && exportScope && <ExportDialog scope={exportScope} snapshot={snap} demo={snap === DEMO} onClose={() => setExporting(false)} />}
 
       {panel === "briefing" && (
         <Briefing
           ix={ix}
           ins={ins}
           changes={snap.changes}
-          onNode={showNode}
+          onNode={reveal}
           onFlow={(id) => go({ kind: "flow", id })}
           onCleanup={() => go({ kind: "cleanup" })}
           onWhatIf={() => {
+            // The account-wide answer: in every environment, so the resource it names is on the map.
+            setEnv(null);
             setLens("load");
             setFactor(1.5);
           }}
         />
       )}
-      {panel === "flow" && flow && <FlowPanel ix={ix} flow={flow} insights={ins.insights} capacity={caps} onNode={(id) => setSelected(id)} />}
+      {panel === "flow" && flow && <FlowPanel ix={ix} flow={flow} insights={ins.insights} capacity={caps} onNode={select} />}
       {panel === "details" && selected && (
         <Details
           ix={ix}
@@ -351,14 +413,8 @@ export default function App() {
           findings={fs}
           blastCount={blast ? blast.size : null}
           onBlast={() => setBlastOn(!blastOn)}
-          onSelect={(id) => {
-            setSelected(id);
-            setBlastOn(false);
-          }}
-          onClose={() => {
-            setSelected(null);
-            setBlastOn(false);
-          }}
+          onSelect={select}
+          onClose={() => select(null)}
           capacity={caps.get(selected)}
           lifecycle={ins.lifecycle.find((l) => l.node === selected)}
           flows={ins.flows.filter((f) => f.nodes.includes(selected))}

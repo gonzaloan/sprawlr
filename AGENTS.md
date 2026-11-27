@@ -17,7 +17,7 @@ Every statement it makes carries the evidence behind it.
 
 1. **Read-only.** Never call an AWS API that changes anything. New calls go in `iam-policy.json`, under a `Describe/List/Get` action or a separate optional statement.
 2. **Never store values that could be secrets or personal data.**
-   - Keep environment variable *keys*, never values.
+   - Keep environment variable *keys*, never values. An export writes neither: values become inputs (ADR 0006).
    - Never read secret values, objects, items or messages.
    - Logs become masked templates (`sprawlr_domain::logs`), never raw lines.
 3. **Say how you know.** Every edge has evidence (`Permitted`, `Declared`, `Observed`), and every inferred app or environment has a method. Never draw a line without evidence, and never show IAM-only reach as configured.
@@ -31,7 +31,7 @@ Every statement it makes carries the evidence behind it.
 
 Hexagonal; see `docs/architecture.md` for the diagram.
 
-- `crates/sprawlr-domain` is pure: no I/O, no async, no AWS. Business rules live here and nowhere else.
+- `crates/sprawlr-domain` is pure: no I/O, no async, no AWS. Business rules live here, and in `crates/sprawlr-iac` for code written from configuration (also pure), and nowhere else.
 - `crates/sprawlr-app` holds ports (traits) and use cases. It does not know AWS, Tauri or the file system.
 - Adapters implement ports:
   - `sprawlr-aws` for AWS;
@@ -63,6 +63,8 @@ npm run typecheck && npm test && npm run build
 cargo run -p sprawlr-cli --no-default-features -- demo --out app/src/demo/demo-snapshot.json
 cargo run -p sprawlr-cli --no-default-features -- docs --snapshot app/src/demo/demo-snapshot.json \
   --out examples/demo-architecture --json app/src/demo/demo-docs.json
+cargo run -p sprawlr-cli --no-default-features -- export --snapshot app/src/demo/demo-snapshot.json \
+  --demo --out examples/demo-export
 
 # Desktop app
 cd app && npx tauri dev

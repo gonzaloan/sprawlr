@@ -1,0 +1,52 @@
+# Values sprawlr never writes. Copy this file to terraform.tfvars and fill them in.
+
+# Value of the environment variable SENDER_ADDRESS of checkout-email-sender. sprawlr never writes it.
+checkout_email_sender_sender_address = ""
+
+# CodeS3Bucket of checkout-email-sender: AWS never returns it. Set it to what you deploy.
+checkout_email_sender_code_s3_bucket = ""
+
+# CodeS3Key of checkout-email-sender: AWS never returns it. Set it to what you deploy.
+checkout_email_sender_code_s3_key = ""
+
+# User data of reports-worker: it may hold secrets, so sprawlr never writes it.
+reports_worker_user_data = ""
+
+# Value of the environment variable DB_HOST of report-generator. sprawlr never writes it.
+report_generator_db_host = ""
+
+# Value of the environment variable REPORTS_API_TOKEN of report-generator. sprawlr never writes it.
+report_generator_reports_api_token = ""
+
+# CodeS3Bucket of report-generator: AWS never returns it. Set it to what you deploy.
+report_generator_code_s3_bucket = ""
+
+# CodeS3Key of report-generator: AWS never returns it. Set it to what you deploy.
+report_generator_code_s3_key = ""
+
+# Value of the environment variable INDEX_NAME of search-indexer. sprawlr never writes it.
+search_indexer_index_name = ""
+
+# Value of the environment variable OPENSEARCH_ENDPOINT of search-indexer. sprawlr never writes it.
+search_indexer_opensearch_endpoint = ""
+
+# CodeS3Bucket of search-indexer: AWS never returns it. Set it to what you deploy.
+search_indexer_code_s3_bucket = ""
+
+# CodeS3Key of search-indexer: AWS never returns it. Set it to what you deploy.
+search_indexer_code_s3_key = ""
+
+# Value of the environment variable OPENSEARCH_ENDPOINT of search-query-handler. sprawlr never writes it.
+search_query_handler_opensearch_endpoint = ""
+
+# CodeS3Bucket of search-query-handler: AWS never returns it. Set it to what you deploy.
+search_query_handler_code_s3_bucket = ""
+
+# CodeS3Key of search-query-handler: AWS never returns it. Set it to what you deploy.
+search_query_handler_code_s3_key = ""
+
+# CodeS3Bucket of legacy-export-job: AWS never returns it. Set it to what you deploy.
+legacy_export_job_code_s3_bucket = ""
+
+# CodeS3Key of legacy-export-job: AWS never returns it. Set it to what you deploy.
+legacy_export_job_code_s3_key = ""

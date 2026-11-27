@@ -39,6 +39,11 @@ export function appView(ix: Index, app: string, env: string | null, permissions 
   return resourceView(ix, members, permissions);
 }
 
+/** Every resource of the account in an environment, for views that draw resources, not apps. */
+export function everythingView(ix: Index, env: string | null, permissions = false): View {
+  return resourceView(ix, ix.snap.nodes.filter((n) => mappable(n) && inEnv(n, env)), permissions);
+}
+
 /** A single resource with its neighbours (used for shared / unassigned resources). */
 export function resourceFocus(ix: Index, id: string, permissions = false): View {
   const n = ix.byId.get(id);

@@ -1,8 +1,8 @@
 //! Secrets Manager metadata: rotation and last use. Values are never requested
 //! (`ListSecrets` does not return them, and the IAM policy denies `GetSecretValue`).
 
-use crate::{evidence, PendingLink, Ref, ScanContext, ScanOutput};
-use sprawlr_domain::{EdgeKind, EvidenceKind, Node, NodeId, NodeKind};
+use crate::{evidence, PendingLink, ScanContext, ScanOutput};
+use sprawlr_domain::{EdgeKind, EvidenceKind, Node, NodeKind};
 
 pub struct SecretMeta {
     pub arn: String,
@@ -51,8 +51,7 @@ pub fn map_secrets(ctx: &ScanContext, metas: Vec<SecretMeta>) -> ScanOutput {
             "last_rotated_days": m.last_rotated_days,
             "last_accessed_days": m.last_accessed_days,
         });
-        if let Some(k) = m.kms_key.filter(|k| !k.starts_with("alias/aws/")) {
-            let to = if k.starts_with("arn:") { Ref::Id(NodeId(k)) } else { Ref::Alias(k) };
+        if let Some(to) = m.kms_key.as_deref().and_then(|k| crate::extract::kms_ref(ctx, k)) {
             out.links.push(PendingLink {
                 from: n.id.clone(),
                 to,

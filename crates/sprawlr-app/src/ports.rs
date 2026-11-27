@@ -6,6 +6,7 @@
 use crate::settings::DesktopSettings;
 use sprawlr_domain::status::Notice;
 use sprawlr_domain::{ArchGraph, Snapshot};
+use sprawlr_iac::{ConfigRead, Wanted};
 use std::future::Future;
 use std::sync::Arc;
 
@@ -40,6 +41,12 @@ pub trait HealthSource {
 /// (`sprawlr_domain::logs`), never as raw lines.
 pub trait ErrorLogSource {
     fn read_errors(&self, graph: &mut ArchGraph, progress: &Progress) -> impl Future<Output = anyhow::Result<Warnings>> + Send;
+}
+
+/// Each resource's whole configuration, read again when a person exports code (ADR 0006). It
+/// goes into the files they asked for and nowhere else: never into a snapshot.
+pub trait ConfigSource {
+    fn read_configs(&self, wanted: &[Wanted], progress: &Progress) -> impl Future<Output = anyhow::Result<ConfigRead>> + Send;
 }
 
 /// Where the latest snapshot is kept between runs, and (optionally) earlier full scans to

@@ -12,8 +12,6 @@ pub enum Finding {
     Nothing,
 }
 
-const SECRET_HINTS: [&str; 6] = ["PASSWORD", "PASSWD", "SECRET", "TOKEN", "API_KEY", "PRIVATE_KEY"];
-
 pub fn classify(key: &str, value: &str) -> Finding {
     let v = value.trim();
     let k = key.to_ascii_uppercase();
@@ -39,7 +37,7 @@ pub fn classify(key: &str, value: &str) -> Finding {
     if v.starts_with('/') && k.contains("PARAM") {
         return Finding::Reference(Ref::Alias(format!("ssm:{v}")));
     }
-    if v.len() >= 8 && SECRET_HINTS.iter().any(|h| k.contains(h)) {
+    if v.len() >= 8 && sprawlr_domain::secrets::named_like_secret(key) {
         return Finding::PlaintextSecret;
     }
     Finding::Nothing

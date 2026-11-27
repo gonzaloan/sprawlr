@@ -1,0 +1,241 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The whole account: written by sprawlr on 2026-11-27 from the configuration of account 111122223333. Every resource is kept if it is removed from the stack.",
+  "Parameters": {
+    "ReportGeneratorCodeS3Bucket": {
+      "Description": "CodeS3Bucket of report-generator: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "ReportGeneratorCodeS3Key": {
+      "Description": "CodeS3Key of report-generator: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "ReportGeneratorDbHost": {
+      "Description": "Value of the environment variable DB_HOST of report-generator. sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    },
+    "ReportGeneratorReportsApiToken": {
+      "Description": "Value of the environment variable REPORTS_API_TOKEN of report-generator. sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    },
+    "ReportsWorkerUserData": {
+      "Description": "User data of reports-worker: it may hold secrets, so sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "ReportGenerator": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ReportGeneratorCodeS3Bucket"
+          },
+          "S3Key": {
+            "Ref": "ReportGeneratorCodeS3Key"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "DB_HOST": {
+              "Ref": "ReportGeneratorDbHost"
+            },
+            "REPORTS_API_TOKEN": {
+              "Ref": "ReportGeneratorReportsApiToken"
+            }
+          }
+        },
+        "FunctionName": "report-generator",
+        "Handler": "index.handler",
+        "MemorySize": 128,
+        "PackageType": "Zip",
+        "Role": "arn:aws:iam::111122223333:role/report-generator-role",
+        "Runtime": "python3.12",
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "reporting"
+          },
+          {
+            "Key": "env",
+            "Value": "dev"
+          }
+        ],
+        "Timeout": 30,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsJobs": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "reports-jobs",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "ReportsJobsDlq",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        },
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "reporting"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "VisibilityTimeout": 900
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsJobsDlq": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "reports-jobs-dlq",
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "reporting"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "VisibilityTimeout": 30
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsOutput": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "BucketKeyEnabled": false,
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "BucketName": "reports-output",
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "reporting"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsUploads": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "BucketKeyEnabled": false,
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "BucketName": "reports-uploads",
+        "NotificationConfiguration": {
+          "QueueConfigurations": [
+            {
+              "Event": "s3:ObjectCreated:*",
+              "Queue": {
+                "Fn::GetAtt": [
+                  "ReportsJobs",
+                  "Arn"
+                ]
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "reporting"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ]
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ReportsWorker": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "IamInstanceProfile": "reports-worker-profile",
+        "ImageId": "ami-0c1a2b3c4d5e6f708",
+        "InstanceType": "m6i.large",
+        "SecurityGroupIds": [
+          "sg-api"
+        ],
+        "SubnetId": "subnet-priv-a",
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "reporting"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "UserData": {
+          "Ref": "ReportsWorkerUserData"
+        }
+      },
+      "Type": "AWS::EC2::Instance",
+      "UpdateReplacePolicy": "Retain"
+    }
+  }
+}

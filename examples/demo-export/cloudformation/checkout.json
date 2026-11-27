@@ -1,0 +1,418 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The whole account: written by sprawlr on 2026-11-27 from the configuration of account 111122223333. Every resource is kept if it is removed from the stack.",
+  "Parameters": {
+    "CheckoutEmailSenderCodeS3Bucket": {
+      "Description": "CodeS3Bucket of checkout-email-sender: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "CheckoutEmailSenderCodeS3Key": {
+      "Description": "CodeS3Key of checkout-email-sender: AWS never returns it. Set it to what you deploy.",
+      "Type": "String"
+    },
+    "CheckoutEmailSenderSenderAddress": {
+      "Description": "Value of the environment variable SENDER_ADDRESS of checkout-email-sender. sprawlr never writes it.",
+      "NoEcho": true,
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "CheckoutAlb": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "IpAddressType": "ipv4",
+        "LoadBalancerAttributes": [
+          {
+            "Key": "idle_timeout.timeout_seconds",
+            "Value": "60"
+          }
+        ],
+        "Name": "checkout-alb",
+        "Scheme": "internet-facing",
+        "SecurityGroups": [
+          "sg-alb"
+        ],
+        "Subnets": [
+          "subnet-pub-a",
+          "subnet-pub-b"
+        ],
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "Type": "application"
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutApi": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/dev-cluster",
+        "DesiredCount": 1,
+        "LaunchType": "FARGATE",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "DISABLED",
+            "SecurityGroups": [],
+            "Subnets": [
+              "subnet-dev-a"
+            ]
+          }
+        },
+        "PropagateTags": "SERVICE",
+        "ServiceName": "checkout-api",
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "dev"
+          }
+        ],
+        "TaskDefinition": "arn:aws:ecs:us-east-1:111122223333:task-definition/checkout-api:47"
+      },
+      "Type": "AWS::ECS::Service",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutApi2": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Cluster": "arn:aws:ecs:us-east-1:111122223333:cluster/prod-cluster",
+        "DesiredCount": 4,
+        "LaunchType": "FARGATE",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "DISABLED",
+            "SecurityGroups": [
+              "sg-api"
+            ],
+            "Subnets": [
+              "subnet-priv-a",
+              "subnet-priv-b"
+            ]
+          }
+        },
+        "PropagateTags": "SERVICE",
+        "ServiceName": "checkout-api",
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "TaskDefinition": "arn:aws:ecs:us-east-1:111122223333:task-definition/checkout-api:42"
+      },
+      "Type": "AWS::ECS::Service",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutApiTaskRole": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": "111122223333"
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Description": "What checkout-api's tasks may do",
+        "ManagedPolicyArns": [],
+        "MaxSessionDuration": 3600,
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": "sqs:SendMessage",
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CheckoutOrderEvents",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Action": "sns:Publish",
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CheckoutNotifications",
+                      "TopicArn"
+                    ]
+                  }
+                },
+                {
+                  "Action": "events:PutEvents",
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:events:us-east-1:111122223333:event-bus/platform-events"
+                },
+                {
+                  "Action": "secretsmanager:GetSecretValue",
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CheckoutProdDbCredentials",
+                      "Id"
+                    ]
+                  }
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "checkout-api-task-policy"
+          }
+        ],
+        "RoleName": "checkout-api-task-role"
+      },
+      "Type": "AWS::IAM::Role",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutCdn": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "DistributionConfig": {
+          "Comment": "checkout storefront",
+          "DefaultCacheBehavior": {
+            "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+            "TargetOriginId": "checkout-alb",
+            "ViewerProtocolPolicy": "redirect-to-https"
+          },
+          "Enabled": true,
+          "HttpVersion": "http2",
+          "Origins": [
+            {
+              "CustomOriginConfig": {
+                "HTTPSPort": 443,
+                "OriginProtocolPolicy": "https-only"
+              },
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "CheckoutAlb",
+                  "DNSName"
+                ]
+              },
+              "Id": "checkout-alb"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ]
+      },
+      "Type": "AWS::CloudFront::Distribution",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutEmailSender": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Architectures": [
+          "arm64"
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Ref": "CheckoutEmailSenderCodeS3Bucket"
+          },
+          "S3Key": {
+            "Ref": "CheckoutEmailSenderCodeS3Key"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "NOTIFICATIONS_TOPIC_ARN": {
+              "Fn::GetAtt": [
+                "CheckoutNotifications",
+                "TopicArn"
+              ]
+            },
+            "SENDER_ADDRESS": {
+              "Ref": "CheckoutEmailSenderSenderAddress"
+            }
+          }
+        },
+        "FunctionName": "checkout-email-sender",
+        "Handler": "index.handler",
+        "MemorySize": 256,
+        "PackageType": "Zip",
+        "Role": "arn:aws:iam::111122223333:role/checkout-email-sender-role",
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "Timeout": 30,
+        "TracingConfig": {
+          "Mode": "Active"
+        }
+      },
+      "Type": "AWS::Lambda::Function",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutNotifications": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "DisplayName": "Checkout notifications",
+        "KmsMasterKeyId": "alias/aws/sns",
+        "Subscription": [
+          {
+            "Endpoint": "arn:aws:lambda:us-east-1:111122223333:function:checkout-email-sender",
+            "Protocol": "lambda"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "TopicName": "checkout-notifications"
+      },
+      "Type": "AWS::SNS::Topic",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutOrderEvents": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "MessageRetentionPeriod": 345600,
+        "QueueName": "checkout-order-events",
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "VisibilityTimeout": 30
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutOrdersDb": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BackupRetentionPeriod": 7,
+        "DBClusterIdentifier": "checkout-orders-db",
+        "DBSubnetGroupName": "orders-db-subnets",
+        "DatabaseName": "orders",
+        "DeletionProtection": true,
+        "Engine": "aurora-postgresql",
+        "EngineVersion": "16.4",
+        "KmsKeyId": "arn:aws:kms:us-east-1:111122223333:key/1f2e3d4c-data",
+        "ManageMasterUserPassword": true,
+        "MasterUsername": "orders_admin",
+        "Port": 5432,
+        "StorageEncrypted": true,
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ],
+        "VpcSecurityGroupIds": [
+          "sg-db"
+        ]
+      },
+      "Type": "AWS::RDS::DBCluster",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutOrdersDbDev": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BackupRetentionPeriod": 1,
+        "DBClusterIdentifier": "checkout-orders-db-dev",
+        "DBSubnetGroupName": "orders-db-dev-subnets",
+        "DatabaseName": "orders",
+        "DeletionProtection": false,
+        "Engine": "aurora-postgresql",
+        "EngineVersion": "16.4",
+        "KmsKeyId": "arn:aws:kms:us-east-1:111122223333:key/1f2e3d4c-data",
+        "ManageMasterUserPassword": true,
+        "MasterUsername": "orders_admin",
+        "Port": 5432,
+        "StorageEncrypted": true,
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "dev"
+          }
+        ],
+        "VpcSecurityGroupIds": []
+      },
+      "Type": "AWS::RDS::DBCluster",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CheckoutProdDbCredentials": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Description": "Credentials checkout-api uses for the orders database",
+        "KmsKeyId": "arn:aws:kms:us-east-1:111122223333:key/1f2e3d4c-data",
+        "Name": "checkout/prod/db-credentials",
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "checkout"
+          },
+          {
+            "Key": "env",
+            "Value": "prod"
+          }
+        ]
+      },
+      "Type": "AWS::SecretsManager::Secret",
+      "UpdateReplacePolicy": "Retain"
+    }
+  }
+}

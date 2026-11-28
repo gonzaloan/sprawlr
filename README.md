@@ -111,7 +111,7 @@ xattr -dr com.apple.quarantine /Applications/sprawlr.app
 ## Build from source
 
 ```bash
-# desktop app (needs Rust, Node 20+ and the Tauri prerequisites for your OS)
+# desktop app (needs Rust, Node 22+ and the Tauri prerequisites for your OS)
 cd app && npm install && npx tauri dev
 
 # no AWS account? the app opens on a fictional demo account,

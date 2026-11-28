@@ -4,6 +4,8 @@ description = "Terraform and CloudFormation written from resources' live configu
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 sprawlr-domain = { path = "../sprawlr-domain" }

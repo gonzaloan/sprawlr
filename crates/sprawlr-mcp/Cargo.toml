@@ -4,6 +4,8 @@ description = "MCP driver: lets an agent ask sprawlr about the last scan (read-o
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "sprawlr-mcp"

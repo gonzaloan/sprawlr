@@ -18,6 +18,8 @@ Notable changes to sprawlr. Versions follow [Semantic Versioning](https://semver
 - A tour GIF, a "why not the AWS console or the AWS CLI" section, SECURITY.md and the license file.
 - `iam-policy.json` also denies batch and history reads of secrets, parameters, object versions and table items.
 - The install steps say which installer fits your system, and how to open it the first time while the builds are not signed with a developer certificate.
+- The documentation's diagrams use Mermaid 12.3, whose KaTeX no longer carries a prototype pollution advisory. They are drawn as before.
+- Building sprawlr from source needs Rust 1.94.1 and Node 22 or newer, the versions its dependencies already required.
 
 ## 0.1.0 (2026-11-25)
 

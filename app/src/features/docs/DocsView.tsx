@@ -17,6 +17,9 @@ function loadMermaid() {
     m.initialize({
       startOnLoad: false,
       securityLevel: "strict",
+      // Mermaid 12 defaults to ELK and the "neo" look; dagre keeps the spacing below and skips a 1.5 MB chunk.
+      layout: "dagre",
+      look: "classic",
       theme: "base",
       fontFamily: "Barlow, system-ui, sans-serif",
       themeVariables: {
@@ -30,7 +33,8 @@ function loadMermaid() {
         edgeLabelBackground: "#f6f8f3",
         tertiaryColor: "#f6f8f3",
       },
-      flowchart: { curve: "basis", padding: 12, nodeSpacing: 36, rankSpacing: 56, useMaxWidth: false },
+      flowchart: { look: "classic", curve: "basis", padding: 12, nodeSpacing: 36, rankSpacing: 56, useMaxWidth: false },
+      sequence: { look: "classic" },
     });
     return m;
   });

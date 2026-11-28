@@ -4,6 +4,8 @@ description = "Desktop driver (Tauri)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -4,8 +4,8 @@ Thanks for helping. The rules every change follows are in [AGENTS.md](AGENTS.md)
 
 ## Setup
 
-- Rust stable (1.90 or newer; the Tauri tray plugins need it).
-- Node 20 or newer.
+- Rust stable (1.94.1 or newer; the AWS SDK needs it).
+- Node 22 or newer.
 - For the desktop app, the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```bash

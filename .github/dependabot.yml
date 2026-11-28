@@ -1,4 +1,6 @@
-# Keeps the pinned GitHub Actions current: each update is a pull request that CI checks.
+# Keeps the pinned GitHub Actions and the app's npm and Cargo dependencies current:
+# each update is a pull request that CI checks. npm and Cargo releases wait a week
+# (cooldown) before they are proposed, so a bad publish has time to be pulled.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -8,3 +10,23 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        update-types: ["minor", "patch"]
